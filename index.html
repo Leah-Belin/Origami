@@ -61,8 +61,10 @@ body{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sa
 .site-bar-inner{ max-width:1080px; margin:0 auto; padding:1.1rem 1.5rem; display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
 .site-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:1rem; color:var(--ink); text-decoration:none; }
 .site-tagline{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; color:var(--ink-muted); }
-.site-nav{ display:flex; gap:1.1rem; }
-.site-nav a{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.04em; color:var(--ink-muted); text-decoration:none; }
+.site-nav{ display:flex; gap:.8rem; }
+/* Padding + matching negative margin grows the tap target to ~44px tall
+   without shifting the link's visual position or the bar's height. */
+.site-nav a{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.04em; color:var(--ink-muted); text-decoration:none; display:inline-block; padding:.85rem .3rem; margin:-.85rem -.3rem; border-radius:6px; }
 .site-nav a:hover{ color:var(--ink); }
 .site-nav a.current{ color:var(--accent-mountain); }
 
@@ -71,12 +73,36 @@ header{ margin-bottom:2rem; }
 h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0; text-wrap:balance; }
 
 .board{ display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:1.75rem; align-items:start; }
-@media (max-width: 780px){ .board{ grid-template-columns: 1fr; } }
+/* Width-only check misses short/landscape phones (e.g. 812x375 — wider
+   than 780 but too short for a desktop 2-col layout plus a square stage),
+   so a height+orientation clause is OR'd in alongside the width check. */
+@media (max-width: 780px), (max-height: 500px) and (orientation: landscape){
+  .board{ grid-template-columns: 1fr; }
+}
+@media (max-height: 500px) and (orientation: landscape){
+  .wrap{ padding:1.2rem 1.2rem 2rem; }
+  header{ margin-bottom:1rem; }
+}
 
 .stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
 .stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; cursor:grab; touch-action:none; }
 .stage-outer.grabbing{ cursor:grabbing; }
 .stage-outer canvas{ display:block; width:100%; height:100%; }
+/* Placed after the base .stage-outer rule above so this wins the cascade
+   (equal specificity — source order decides) whenever the media query
+   matches: a square aspect-ratio would otherwise make the stage as tall as
+   it is wide (~full viewport width), swamping a short viewport. The WebGL
+   resize() loop already reads clientWidth/clientHeight generically, so
+   capping height here and letting width follow needs no JS change. */
+@media (max-height: 500px) and (orientation: landscape){
+  .stage-outer{ aspect-ratio:auto; height:34vh; }
+}
+/* Discoverability affordance for the drag-to-rotate interaction: cursor:grab
+   above signals it on desktop hover, but there's no hover on touch, so this
+   small textual hint carries the same message there. Visible until the
+   user's first real drag, then fades out (see hideDragHint() in the script). */
+.drag-hint{ position:absolute; left:50%; bottom:.7rem; transform:translateX(-50%); display:flex; align-items:center; gap:.35rem; background:rgba(20,18,14,.62); color:#fff; font-family:'IBM Plex Mono', monospace; font-size:.68rem; letter-spacing:.03em; padding:.4rem .75rem; border-radius:99px; pointer-events:none; opacity:1; transition:opacity .5s ease; white-space:nowrap; }
+.drag-hint.is-hidden{ opacity:0; }
 .stage-caption{ margin-top:.85rem; font-family:'IBM Plex Mono', monospace; font-size:.74rem; color:var(--ink-muted); text-align:center; }
 
 .panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.5rem 1.6rem 1.7rem; box-shadow: 0 1px 2px var(--shadow); }
@@ -91,9 +117,12 @@ h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem
 
 .controls{ display:flex; gap:.6rem; margin-bottom:1.1rem; flex-wrap:wrap; }
 button{ font-family:'IBM Plex Sans', sans-serif; font-size:.88rem; font-weight:500; padding:.85rem 1.05rem; min-height:44px; border-radius:9px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); cursor:pointer; touch-action:manipulation; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
-button:hover:not(:disabled){ background:var(--border); }
-button:active:not(:disabled){ transform: scale(.97); }
-button:disabled{ opacity:.4; cursor:default; }
+button:hover:not(:disabled):not([aria-disabled="true"]){ background:var(--border); }
+button:active:not(:disabled):not([aria-disabled="true"]){ transform: scale(.97); }
+/* aria-disabled + pointer-events:none (not the native disabled attribute)
+   so Fold/Play stay focusable and keyboard users don't lose their place
+   mid-animation — disabled elements can't hold focus, aria-disabled ones can. */
+button:disabled, button[aria-disabled="true"]{ opacity:.4; cursor:default; pointer-events:none; }
 button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 button.primary{ background:var(--accent-mountain); border-color:var(--accent-mountain); color:#fff; }
 button.primary:hover:not(:disabled){ background:#255e66; }
@@ -141,7 +170,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <section>
     <div class="board">
       <div class="stage-card">
-        <div class="stage-outer" id="stage"></div>
+        <div class="stage-outer" id="stage">
+          <div class="drag-hint" id="dragHint" aria-hidden="true">↻ Drag to rotate</div>
+        </div>
         <p class="stage-caption" id="stageCaption">square sheet, flat</p>
       </div>
       <div class="panel">
@@ -383,23 +414,43 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // around X. Free, unclamped tilt on purpose: the paper has a real front
   // and back, and the only way to see the back is to actually turn it
   // over — an artificial limit here would make that impossible.
-  let autoRotate = 0, userRotating = false, dragging = false, lastX = 0, lastY = 0;
+  //
+  // userRotating only flips on once real movement is seen (past
+  // DRAG_THRESHOLD px), not on pointerdown alone — a tap with no movement
+  // (e.g. someone just testing the stage, or a mis-tap) used to freeze the
+  // ambient sway forever for no benefit.
+  const DRAG_THRESHOLD = 4;
+  let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
+  let downX = 0, downY = 0, lastX = 0, lastY = 0;
+
+  const dragHintEl = document.getElementById('dragHint');
+  function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
 
   stageEl.addEventListener('pointerdown', (e)=>{
-    dragging = true;
-    userRotating = true;
-    lastX = e.clientX; lastY = e.clientY;
+    pointerActive = true;
+    dragging = false;
+    downX = lastX = e.clientX; downY = lastY = e.clientY;
     stageEl.setPointerCapture(e.pointerId);
-    stageEl.classList.add('grabbing');
   });
   stageEl.addEventListener('pointermove', (e)=>{
-    if(!dragging) return;
+    if(!pointerActive) return;
+    if(!dragging){
+      const totalDx = e.clientX - downX, totalDy = e.clientY - downY;
+      if(Math.hypot(totalDx, totalDy) < DRAG_THRESHOLD) return;
+      // Threshold just crossed: this is a real drag, not a stray tap.
+      dragging = true;
+      userRotating = true;
+      stageEl.classList.add('grabbing');
+      hideDragHint();
+      lastX = e.clientX; lastY = e.clientY;
+      return;
+    }
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     group.rotation.y += dx * 0.008;
     group.rotation.x += dy * 0.008;
   });
-  function endDrag(){ dragging = false; stageEl.classList.remove('grabbing'); }
+  function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
   stageEl.addEventListener('pointercancel', endDrag);
   stageEl.addEventListener('pointerleave', endDrag);
@@ -521,7 +572,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     requestAnimationFrame(frame);
   }
 
-  function setButtons(on){ el.foldBtn.disabled=!on; el.playBtn.disabled=!on; }
+  // aria-disabled (not the native disabled attribute) so these buttons stay
+  // focusable while "off" — a keyboard user tabbed onto Fold/Play doesn't
+  // get bumped out when an animation starts, since disabled elements can't
+  // hold focus but aria-disabled ones can. pointer-events:none in CSS blocks
+  // mouse clicks; isDisabled()/the click-handler guards below block the
+  // click that keyboard Enter/Space still fires on a focused button.
+  function setButtonDisabled(btn, off){ btn.setAttribute('aria-disabled', off ? 'true' : 'false'); }
+  function isDisabled(btn){ return btn.getAttribute('aria-disabled')==='true'; }
+  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); }
 
   function updatePanel(){
     const total = STEPS.length;
@@ -529,14 +588,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
       el.instruction.textContent='All 4 corners meet at one point above center, with center dipped down as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
-      el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
+      el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
       el.stageCaption.textContent='waterbomb base — collapsed';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
       el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : (step.type==='collapse' ? 'Collapse →' : 'Fold →');
-      el.foldBtn.disabled = false;
+      setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
         el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
@@ -571,13 +630,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
 
   el.foldBtn.addEventListener('click', ()=>{
+    if(isDisabled(el.foldBtn)) return;
     if(stepIndex>=STEPS.length){ reset(); return; }
     advance();
   });
   el.playBtn.addEventListener('click', async ()=>{
+    if(isDisabled(el.playBtn)) return;
     if(playing){ playing=false; el.playBtn.textContent='▶ Play all'; return; }
     if(stepIndex>=STEPS.length){ reset(); await new Promise(r=>setTimeout(r,200)); }
-    playing = true; el.playBtn.textContent='■ Stop';
+    // "Pause" (not "Stop"): clicking it again mid-sequence just halts the
+    // autoplay loop after the in-flight step finishes — it doesn't reset
+    // progress — so the label shouldn't imply the fold undoes itself.
+    playing = true; el.playBtn.textContent='❚❚ Pause';
     while(playing && stepIndex<STEPS.length){
       await advance();
       if(!playing) break;
