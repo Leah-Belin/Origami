@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fold Along — Waterbomb Base</title>
+<title>Fold Along — Crane</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -45,15 +45,16 @@ body{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sa
 .site-bar{ border-bottom:1px solid var(--border); }
 .site-bar-inner{ max-width:1080px; margin:0 auto; padding:1.1rem 1.5rem; display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
 .site-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:1rem; color:var(--ink); text-decoration:none; }
-.site-tagline{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; color:var(--ink-muted); }
 .site-nav{ display:flex; gap:1.1rem; }
 .site-nav a{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.04em; color:var(--ink-muted); text-decoration:none; }
 .site-nav a:hover{ color:var(--ink); }
 .site-nav a.current{ color:var(--accent-mountain); }
 
 .wrap{ max-width:1080px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
-header{ margin-bottom:2rem; }
+header{ margin-bottom:.6rem; }
 h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0; text-wrap:balance; }
+.progress-note{ margin:.5rem 0 1.9rem; color:var(--ink-muted); font-size:.92rem; line-height:1.55; max-width:60ch; }
+.progress-note strong{ color:var(--ink); font-weight:600; }
 
 .board{ display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:1.75rem; align-items:start; }
 @media (max-width: 780px){ .board{ grid-template-columns: 1fr; } }
@@ -94,8 +95,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <div class="site-bar-inner">
     <span class="site-title">Fold Along</span>
     <nav class="site-nav">
-      <a href="index.html" class="current">Waterbomb base</a>
-      <a href="crane.html">Crane</a>
+      <a href="index.html">Waterbomb base</a>
+      <a href="crane.html" class="current">Crane</a>
     </nav>
   </div>
 </div>
@@ -104,8 +105,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
 <div class="wrap">
   <header>
-    <h1>Waterbomb base</h1>
+    <h1>Crane — preliminary base</h1>
   </header>
+  <p class="progress-note">In progress: this covers the crane's first stage, the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped. The rest of the crane (narrowing the legs, shaping the head and tail) needs fold moves this engine doesn't support yet.</p>
 
   <section>
     <div class="board">
@@ -137,7 +139,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const OUTER = ['A','N','B','E','C','S','D','W'];
 
   // Flat starting positions (Y=0 plane). X,Z mirror the original 2D square (0-100),
-  // recentered so the middle (Ctr) sits at the origin.
+  // recentered so the middle (Ctr) sits at the origin. Identical to the
+  // waterbomb base's flat sheet — the precrease is the same crease pattern.
   const FLAT = {
     Ctr: new THREE.Vector3(0,0,0),
     A: new THREE.Vector3(-50,0,-50),
@@ -189,31 +192,28 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     return axisDir;
   }
 
-  // The real collapse can't be built from a chain of ordinary single-hinge
-  // folds — that was tried and it's mathematically wrong: any sequence of
-  // whole-flap 180° hinge folds along these creases drags the 4 edge
-  // midpoints (N,E,S,W) together into a single point too, when the real
-  // base needs them to stay apart, spread around the rim. The actual
-  // mechanism is a single coordinated motion (the vertical/horizontal
-  // creases and the diagonals moving in opposite senses at once), so it's
-  // modeled here as one target 3D pose, derived from the one constraint
-  // that has to hold throughout: every panel is a rigid triangle, so the
-  // three original side lengths (center-to-corner, center-to-edge-midpoint,
-  // and each rim edge) must still measure the same once collapsed.
-  // Solving that (center pops up by h, the 4 corners converge to one point
-  // h below center, and by the square's symmetry N/E/S/W stay at a shared
-  // height and radius) gives a clean, fully consistent answer:
-  // h = radius = 25*sqrt(2), with N/E/S/W staying in the original z=0
-  // plane, just pulled in from radius 50 to 25*sqrt(2).
-  const K = 25 * Math.SQRT2;
-  const CORNER_PT = new THREE.Vector3(0, -K, 0);
+  // The preliminary base is the SAME single-vertex mechanism as the
+  // waterbomb base — the only difference is which 4 points converge to a
+  // point and which 4 spread out as the rim. Waterbomb: corners converge,
+  // edge-midpoints are the rim. Preliminary base: edge-midpoints converge,
+  // corners are the rim (this is the standard fact that these two bases
+  // are the same crease pattern with the opposite mountain/valley
+  // assignment). Re-deriving from the same rigid-panel constraint used for
+  // the waterbomb base (every panel keeps its 3 original side lengths —
+  // center-to-corner is 70.71, center-to-edge-midpoint is 50, each rim
+  // edge is 50) with the roles of "corner" and "edge-midpoint" swapped
+  // gives: Ctr rises by 25, the merged edge-midpoint point drops by 25,
+  // and the 4 corners spread to radius 50 at height -25, along their
+  // original diagonal directions.
+  const MERGE_PT = new THREE.Vector3(0, -25, 0);
+  const R = 50 / Math.SQRT2; // 35.355 — corner spread radius, resolved along the diagonal
   const COLLAPSED = {
-    Ctr: new THREE.Vector3(0, K, 0),
-    A: CORNER_PT, B: CORNER_PT, C: CORNER_PT, D: CORNER_PT,
-    N: new THREE.Vector3(0, 0, -K),
-    E: new THREE.Vector3(K, 0, 0),
-    S: new THREE.Vector3(0, 0, K),
-    W: new THREE.Vector3(-K, 0, 0),
+    Ctr: new THREE.Vector3(0, 25, 0),
+    N: MERGE_PT, E: MERGE_PT, S: MERGE_PT, W: MERGE_PT,
+    A: new THREE.Vector3(-R, -25, -R),
+    B: new THREE.Vector3(R, -25, -R),
+    C: new THREE.Vector3(R, -25, R),
+    D: new THREE.Vector3(-R, -25, R),
   };
 
   // ---- Steps ----
@@ -226,17 +226,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['B','D'], moving:['A','N','W'], instruction:'Fold the top-left corner to the bottom-right corner, creating the other diagonal crease.' },
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
-    { type:'collapse', instruction:'Now fold on the vertical and horizontal creases while the diagonals push through the other way — the whole sheet collapses at once. All 4 corners meet at one point below center; center pops up as the opposite tip; the 4 edge midpoints stay apart, forming the base\'s rim.' },
+    { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point below center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
   ];
 
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
   const scene = new THREE.Scene();
-  // Near/far kept tight around where the geometry actually lives (roughly
-  // 50-450 units from camera) — the depth buffer only has so much
-  // precision, and wasting most of it on 0.1-1000 was the cause of visible
-  // z-fighting flicker while two panels pass through nearly-coplanar
-  // poses mid-fold.
   const camera = new THREE.PerspectiveCamera(38, 1, 50, 500);
   camera.position.set(150, 70, 180);
   camera.lookAt(0, -35, 0);
@@ -259,16 +254,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const positions = new Float32Array(vertCount * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  // The paper has a real front and a real back, always — a viewer should
-  // be able to spin the flat, untouched sheet and see red on top, white
-  // underneath, before a single fold happens. That can only come from the
-  // GPU's own per-fragment "which side of this triangle am I looking at"
-  // test (gl_FrontFacing): vertex colors are the same regardless of which
-  // side is toward the camera, so they can't represent a true two-sided
-  // sheet. Panels are wound so the front (+Y when flat) is consistent
-  // everywhere, and a fold is a rotation (never a reflection), so that
-  // winding — and therefore which side is "front" — never changes; this
-  // just asks, per pixel, which side is currently facing the camera.
+  // True two-sided paper: gl_FrontFacing asks, per pixel, which side of
+  // the triangle currently faces the camera, so red/white is always a
+  // property of the paper's actual orientation, not tracked fold history
+  // or camera-independent guesswork.
   const paperMat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
@@ -381,15 +370,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
-        // Stop just short of p=1. At the exact mathematical endpoint every
-        // panel sits exactly perpendicular to its own flat orientation —
-        // a genuine tie with no well-defined "outward" side, which is why
-        // the finished base was showing an arbitrary red/white patchwork
-        // instead of solid red. The last fraction of a percent of motion
-        // is visually imperceptible, so stopping short of the tie keeps
-        // every panel decisively on the same side it's been on the whole
-        // animation — the paper's back stays tucked inside, as it does on
-        // a real folded base.
+        // Stop just short of p=1 — see the waterbomb base for why: at the
+        // exact endpoint every panel sits exactly perpendicular to its own
+        // flat orientation, a genuine tie with no well-defined outward
+        // side. Stopping a hair short (imperceptible visually) keeps every
+        // panel decisively on the side it's been on the whole animation.
         const pc = Math.min(p, 0.985);
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
@@ -398,14 +383,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         return out;
       }
       const angleRad = p * Math.PI;
-      // A folded flap ends up exactly coplanar with the static half
-      // underneath it (folding a rectangle in half always lands one half
-      // exactly on the other) — without help, the GPU's depth test resolves
-      // that dead tie arbitrarily, which is why some folds correctly showed
-      // the folded-over (white) side on top and others silently didn't. The
-      // flap is the one that should render on top (that's what "folded
-      // over" means), so lift it a hair as it approaches fully folded —
-      // zero at the flat start, where there's no overlap yet to resolve.
+      // See the waterbomb base for why the lift is needed: a folded flap
+      // ends up exactly coplanar with the static half underneath it, and
+      // without help the GPU's depth test resolves that tie arbitrarily.
       const lift = (angleRad / Math.PI) * 0.3;
       const out = { Ctr: FLAT.Ctr.clone() };
       OUTER.forEach(name=>{
@@ -434,9 +414,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='All 4 corners meet at one point below center, with center popped up as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
+      el.instruction.textContent='The 4 edge midpoints meet at one point below center, with center popped up as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base.';
       el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
-      el.stageCaption.textContent='waterbomb base — collapsed';
+      el.stageCaption.textContent='preliminary base — collapsed';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
