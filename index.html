@@ -153,24 +153,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
-  // Front/back color is decided per panel, per frame, by comparing its
-  // CURRENT normal (from its actual current 3D vertex positions) against
-  // its own ORIGINAL flat-state normal — a fixed reference, computed once,
-  // that never depends on camera position. This is what real paper does:
-  // which side you see depends on how that patch of paper is oriented in
-  // space, never on where the viewer is standing. (An earlier version used
-  // gl_FrontFacing, which IS camera-relative — for a non-flat popped-up
-  // shape that reads as a patchwork that changes as you rotate the view,
-  // which is wrong. It also depends only on well-defined endpoint geometry,
-  // not on tracking a fold-by-fold flip history, which is what made the
-  // very first version of this fragile.)
-  function panelNormal(pts){
-    const e1 = new THREE.Vector3().subVectors(pts[1], pts[0]);
-    const e2 = new THREE.Vector3().subVectors(pts[2], pts[0]);
-    return new THREE.Vector3().crossVectors(e1, e2);
-  }
-  const FLAT_NORMALS = PANELS.map(tri => panelNormal(tri.map(name => FLAT[name])));
-
   // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim segments.
   const LINE_PAIRS = [];
   OUTER.forEach(n=>LINE_PAIRS.push('Ctr',n));
@@ -243,7 +225,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
+  // Near/far kept tight around where the geometry actually lives (roughly
+  // 50-450 units from camera) — the depth buffer only has so much
+  // precision, and wasting most of it on 0.1-1000 was the cause of visible
+  // z-fighting flicker while two panels pass through nearly-coplanar
+  // poses mid-fold.
+  const camera = new THREE.PerspectiveCamera(38, 1, 50, 500);
   camera.position.set(150, 70, 180);
   camera.lookAt(0, -35, 0);
 
@@ -263,13 +250,28 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const geometry = new THREE.BufferGeometry();
   const vertCount = PANELS.length * 3;
   const positions = new Float32Array(vertCount * 3);
-  const vColors = new Float32Array(vertCount * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
 
+  // The paper has a real front and a real back, always — a viewer should
+  // be able to spin the flat, untouched sheet and see red on top, white
+  // underneath, before a single fold happens. That can only come from the
+  // GPU's own per-fragment "which side of this triangle am I looking at"
+  // test (gl_FrontFacing): vertex colors are the same regardless of which
+  // side is toward the camera, so they can't represent a true two-sided
+  // sheet. Panels are wound so the front (+Y when flat) is consistent
+  // everywhere, and a fold is a rotation (never a reflection), so that
+  // winding — and therefore which side is "front" — never changes; this
+  // just asks, per pixel, which side is currently facing the camera.
   const paperMat = new THREE.MeshStandardMaterial({
-    vertexColors:true, side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
+    side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
+  paperMat.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      diffuseColor.rgb = gl_FrontFacing ? vec3(${RED[0]}, ${RED[1]}, ${RED[2]}) : vec3(${WHITE[0]}, ${WHITE[1]}, ${WHITE[2]});`
+    );
+  };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
   group.add(paperMesh);
 
@@ -280,29 +282,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
-  // colorFrame defaults to the same positions being rendered, but the
-  // collapse step passes a slightly-nudged one — see animateStep — because
-  // at the exact instant the 4 corners meet, every panel's normal is
-  // mathematically exactly perpendicular to its flat-state normal (a
-  // genuine tie, not a bug), so comparing right at that instant is
-  // arbitrary. Nudging the comparison a hair before that instant keeps it
-  // consistent with the rest of the animation instead of snapping.
-  function applyFrame(frame, colorFrame){
-    const cframe = colorFrame || frame;
+  function applyFrame(frame){
     let vi = 0;
-    PANELS.forEach((tri, pi)=>{
-      const pts = tri.map(name => frame[name] || FLAT[name]);
-      const cpts = tri.map(name => cframe[name] || FLAT[name]);
-      const isFront = panelNormal(cpts).dot(FLAT_NORMALS[pi]) >= 0;
-      const c = isFront ? RED : WHITE;
-      pts.forEach(p=>{
+    PANELS.forEach(tri=>{
+      tri.forEach(name=>{
+        const p = frame[name] || FLAT[name];
         positions[vi*3]=p.x; positions[vi*3+1]=p.y; positions[vi*3+2]=p.z;
-        vColors[vi*3]=c[0]; vColors[vi*3+1]=c[1]; vColors[vi*3+2]=c[2];
         vi++;
       });
     });
     geometry.attributes.position.needsUpdate = true;
-    geometry.attributes.color.needsUpdate = true;
     geometry.computeVertexNormals();
 
     LINE_PAIRS.forEach((name,i)=>{
@@ -327,8 +316,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   // Gentle auto-rotate until the user first drags, then it's fully in
   // their hands — dragging (mouse or touch, via Pointer Events so both
-  // are handled the same way) spins the model around Y and tilts it a
-  // little around X, clamped so it can't flip upside down.
+  // are handled the same way) spins the model around Y and tilts it
+  // around X. Free, unclamped tilt on purpose: the paper has a real front
+  // and back, and the only way to see the back is to actually turn it
+  // over — an artificial limit here would make that impossible.
   let autoRotate = 0, userRotating = false, dragging = false, lastX = 0, lastY = 0;
 
   stageEl.addEventListener('pointerdown', (e)=>{
@@ -343,7 +334,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     group.rotation.y += dx * 0.008;
-    group.rotation.x = Math.max(-0.6, Math.min(0.7, group.rotation.x + dy * 0.008));
+    group.rotation.x += dy * 0.008;
   });
   function endDrag(){ dragging = false; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
@@ -412,15 +403,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
-      // At the exact moment the collapse finishes, every panel's normal is
-      // mathematically exactly perpendicular to its flat normal — a genuine
-      // tie (each panel has tilted a full quarter-turn but not past it).
-      // The whole animation up to that instant reads as consistently red,
-      // so resolve the tie the same way rather than snapping to white —
-      // computing color a hair BEFORE the tie keeps it decisively on the
-      // "still red" side with no last-instant jump.
-      const colorP = isCollapse ? Math.min(p, 0.99) : p;
-      applyFrame(computeFrame(p), colorP === p ? undefined : computeFrame(colorP));
+      applyFrame(computeFrame(p));
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
     }
