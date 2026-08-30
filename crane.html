@@ -23,6 +23,17 @@
   --paper-back:#F2EEE3;
   --shadow: rgba(32,28,22,.20);
   --focus:#2B6E77;
+  /* Dedicated badge-text colors, tuned per-mode for ~4.5:1+ contrast
+     against their own badge background (see .badge.valley/.badge.collapse
+     below) — kept separate from --accent-valley/--accent-mountain so this
+     contrast fix can't ripple into the other UI that reuses those tokens
+     (nav link, primary button, filled dot). */
+  --badge-valley-fg:#A23821;
+  --badge-collapse-fg:#2B6E77;
+  /* Unfilled step-dot color: dedicated token (not --border) so it can be
+     tuned for clear ~3:1 visibility against the card without changing the
+     many other things --border draws. */
+  --dot-empty:#999283;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
@@ -30,6 +41,8 @@
     --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
     --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
     --shadow: rgba(0,0,0,.55);
+    --badge-valley-fg:#E8836B; --badge-collapse-fg:#4FB0BA;
+    --dot-empty:#6B7078;
   }
 }
 :root[data-theme="dark"]{
@@ -37,6 +50,8 @@
   --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
   --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
   --shadow: rgba(0,0,0,.55);
+  --badge-valley-fg:#E8836B; --badge-collapse-fg:#4FB0BA;
+  --dot-empty:#6B7078;
 }
 
 *{box-sizing:border-box;}
@@ -69,8 +84,8 @@ h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem
 .panel-top{ display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.1rem; }
 .step-count{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); }
 .badge{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; padding:.3rem .6rem; border-radius:99px; white-space:nowrap; }
-.badge.valley{ background:var(--accent-valley-soft); color:var(--accent-valley); }
-.badge.collapse{ background:var(--accent-mountain-soft); color:var(--accent-mountain); }
+.badge.valley{ background:var(--accent-valley-soft); color:var(--badge-valley-fg); }
+.badge.collapse{ background:var(--accent-mountain-soft); color:var(--badge-collapse-fg); }
 .badge.done{ background:var(--surface-2); color:var(--ink-muted); }
 
 .instruction{ font-family:'Unbounded', sans-serif; font-weight:600; font-size:1.22rem; line-height:1.35; margin:0 0 1.3rem; text-wrap:balance; min-height:3.6rem; }
@@ -85,12 +100,21 @@ button.primary{ background:var(--accent-mountain); border-color:var(--accent-mou
 button.primary:hover:not(:disabled){ background:#255e66; }
 
 .dots{ display:flex; gap:.4rem; }
-.dot{ width:.5rem; height:.5rem; border-radius:99px; background:var(--border); }
+.dot{ width:.5rem; height:.5rem; border-radius:99px; background:var(--dot-empty); }
 .dot.filled{ background:var(--accent-mountain); }
 
 .swatch-label{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); margin:1.3rem 0 .7rem; }
-.swatches{ display:flex; gap:.55rem; flex-wrap:wrap; }
-.swatch{ width:28px; height:28px; padding:0; border-radius:50%; border:2px solid transparent; box-shadow:inset 0 0 0 1px rgba(0,0,0,.12); cursor:pointer; }
+/* gap widened from .55rem so the ::after hit-area expansion below (8px a
+   side, 16px between two adjacent swatches) doesn't overlap into the
+   neighboring swatch's own hit area. */
+.swatches{ display:flex; gap:1rem; flex-wrap:wrap; }
+/* min-height:28px overrides the generic button{min-height:44px} rule
+   (higher specificity wins), which otherwise stretched this to 28x44 —
+   an oval, not a circle. The 44px touch target isn't lost: ::after below
+   pads the actual hit area back out to ~44x44 invisibly, around the
+   visible 28px dot. */
+.swatch{ width:28px; height:28px; min-height:28px; padding:0; border-radius:50%; border:2px solid transparent; box-shadow:inset 0 0 0 1px rgba(0,0,0,.12); cursor:pointer; position:relative; }
+.swatch::after{ content:''; position:absolute; inset:-8px; }
 .swatch:hover{ transform:scale(1.08); }
 .swatch.active{ border-color:var(--ink); }
 .swatch:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
@@ -245,9 +269,17 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(38, 1, 50, 500);
-  camera.position.set(150, 70, 180);
-  camera.lookAt(0, -35, 0);
+  // Framing: every named point stays within ~71 units of the origin for
+  // the whole sequence (flat sheet, mid-folds, and the collapsed base
+  // alike — checked numerically), but a flat, nearly-overhead pose reads
+  // as a thin sliver rather than a shape with volume. A closer camera and
+  // wider FOV than before make that sliver (and every other step) fill
+  // much more of the stage, and centering the look-at on the origin
+  // (rather than well below it) keeps both the flat poses and the
+  // collapsed base framed well without clipping either extreme.
+  const camera = new THREE.PerspectiveCamera(46, 1, 50, 500);
+  camera.position.set(100, 55, 115);
+  camera.lookAt(0, 0, 0);
 
   const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
   stageEl.appendChild(renderer.domElement);
