@@ -1,1 +1,524 @@
-PLACEHOLDER
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fold Along — Waterbomb Base</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root{
+  --bg:#EAE7DD;
+  --surface:#FFFFFF;
+  --surface-2:#F2EFE6;
+  --ink:#20242A;
+  --ink-muted:#5B6169;
+  --border:#D7D2C4;
+  --mat:#DAD5C7;
+  --accent-valley:#C1442D;
+  --accent-valley-soft:#F4DED7;
+  --accent-mountain:#2B6E77;
+  --accent-mountain-soft:#DCE9E8;
+  --paper-front:#C1442D;
+  --paper-back:#F2EEE3;
+  --shadow: rgba(32,28,22,.20);
+  --focus:#2B6E77;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1A1D22; --surface:#23262D; --surface-2:#2A2D35;
+    --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
+    --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
+    --shadow: rgba(0,0,0,.55);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1A1D22; --surface:#23262D; --surface-2:#2A2D35;
+  --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
+  --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
+  --shadow: rgba(0,0,0,.55);
+}
+
+*{box-sizing:border-box;}
+body{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+
+.site-bar{ border-bottom:1px solid var(--border); }
+.site-bar-inner{ max-width:1080px; margin:0 auto; padding:1.1rem 1.5rem; display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+.site-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:1rem; color:var(--ink); text-decoration:none; }
+.site-tagline{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; color:var(--ink-muted); }
+
+.wrap{ max-width:1080px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
+header{ margin-bottom:2rem; max-width:640px; }
+.eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent-mountain); margin:0 0 .6rem; }
+h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0 0 .65rem; text-wrap:balance; }
+header p{ margin:0; color:var(--ink-muted); font-size:1rem; line-height:1.55; max-width:60ch; }
+
+.board{ display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:1.75rem; align-items:start; }
+@media (max-width: 780px){ .board{ grid-template-columns: 1fr; } }
+
+.stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
+.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; }
+.stage-outer canvas{ display:block; width:100%; height:100%; }
+.stage-caption{ margin-top:.85rem; font-family:'IBM Plex Mono', monospace; font-size:.74rem; color:var(--ink-muted); text-align:center; }
+
+.panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.5rem 1.6rem 1.7rem; box-shadow: 0 1px 2px var(--shadow); }
+.panel-top{ display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.1rem; }
+.step-count{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); }
+.badge{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; padding:.3rem .6rem; border-radius:99px; white-space:nowrap; }
+.badge.valley{ background:var(--accent-valley-soft); color:var(--accent-valley); }
+.badge.collapse{ background:var(--accent-mountain-soft); color:var(--accent-mountain); }
+.badge.done{ background:var(--surface-2); color:var(--ink-muted); }
+
+.instruction{ font-family:'Unbounded', sans-serif; font-weight:600; font-size:1.22rem; line-height:1.35; margin:0 0 1.3rem; text-wrap:balance; min-height:3.6rem; }
+
+.controls{ display:flex; gap:.6rem; margin-bottom:1.1rem; flex-wrap:wrap; }
+button{ font-family:'IBM Plex Sans', sans-serif; font-size:.88rem; font-weight:500; padding:.6rem 1.05rem; border-radius:9px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); cursor:pointer; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
+button:hover:not(:disabled){ background:var(--border); }
+button:active:not(:disabled){ transform: scale(.97); }
+button:disabled{ opacity:.4; cursor:default; }
+button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+button.primary{ background:var(--accent-mountain); border-color:var(--accent-mountain); color:#fff; }
+button.primary:hover:not(:disabled){ background:#255e66; }
+
+.dots{ display:flex; gap:.4rem; margin-bottom:1.4rem; }
+.dot{ width:.5rem; height:.5rem; border-radius:99px; background:var(--border); }
+.dot.filled{ background:var(--accent-mountain); }
+
+.divider{ border:none; border-top:1px solid var(--border); margin:0 0 1.2rem; }
+
+.explainer h3{ font-family:'IBM Plex Mono', monospace; font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 .6rem; font-weight:400; }
+.explainer p{ font-size:.92rem; line-height:1.6; color:var(--ink-muted); margin:0 0 1rem; }
+.explainer p strong{ color:var(--ink); font-weight:600; }
+pre.code{ background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:.85rem 1rem; font-family:'IBM Plex Mono', monospace; font-size:.76rem; line-height:1.55; overflow-x:auto; color:var(--ink); margin:0; white-space:pre; }
+.code-num{ color:var(--accent-mountain); }
+.code-str{ color:var(--accent-valley); }
+
+.roadmap{ margin-top:2.5rem; padding-top:1.75rem; border-top:1px solid var(--border); }
+.roadmap h2{ font-family:'IBM Plex Mono', monospace; font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 1rem; font-weight:400; }
+.roadmap ul{ list-style:none; margin:0; padding:0; display:grid; gap:.6rem; }
+.roadmap li{ font-size:.92rem; line-height:1.55; color:var(--ink-muted); padding-left:1.4rem; position:relative; }
+.roadmap li::before{ content:'○'; position:absolute; left:0; color:var(--border); }
+.roadmap li.done::before{ content:'●'; color:var(--accent-mountain); }
+.roadmap li strong{ color:var(--ink); font-weight:600; }
+</style>
+</head>
+<body>
+
+<div class="site-bar">
+  <div class="site-bar-inner">
+    <span class="site-title">Fold Along</span>
+    <span class="site-tagline">origami instructions, animated step by step</span>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Fold Engine — 3D</p>
+    <h1>Waterbomb base, in real 3D</h1>
+    <p>Precrease folds still rotate a flap around a hinge — same idea as before. But the final collapse needs all 4 corners to converge on <strong>one point</strong> while the center stays put, which means the panels have to leave the flat plane. That's genuine 3D, rendered with Three.js instead of flat CSS transforms.</p>
+  </header>
+
+  <section>
+    <p class="chapter-note" style="color:var(--ink-muted); font-size:.94rem; line-height:1.55; max-width:64ch; margin:0 0 1.4rem;">Steps 1–8 are the precrease: fold, then unfold, four times. Step 9 is the collapse — the 4 creases move together in <strong>one coordinated motion</strong>, not a chain of separate hinge folds, landing on the one 3D pose that keeps every panel's original side lengths intact. Front/back color compares each panel's current normal to its own flat-state normal — a fixed reference, not the camera — so it can't drift out of sync with the shape or change just because you rotated the view.</p>
+    <div class="board">
+      <div class="stage-card">
+        <div class="stage-outer" id="stage"></div>
+        <p class="stage-caption" id="stageCaption">square sheet, flat</p>
+      </div>
+      <div class="panel">
+        <div class="panel-top">
+          <span class="step-count" id="stepCount">Step 1 of 9</span>
+          <span class="badge valley" id="badge">Fold</span>
+        </div>
+        <p class="instruction" id="instruction"></p>
+        <div class="controls">
+          <button id="foldBtn" class="primary">Fold →</button>
+          <button id="playBtn">▶ Play all</button>
+        </div>
+        <div class="dots" id="dots"></div>
+        <hr class="divider">
+        <div class="explainer">
+          <h3>What's driving it</h3>
+          <p id="explainerText"></p>
+          <pre class="code" id="codePanel"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="roadmap">
+      <h2>Roadmap</h2>
+      <ul>
+        <li class="done"><strong>Waterbomb base</strong> — precrease + collapse, verified against real folded paper.</li>
+        <li>Traditional crane — needs squash, petal, and reverse-fold primitives the engine doesn't have yet.</li>
+        <li>A generalized fold-sequence format so new models are data, not new code.</li>
+        <li>Upload your own folding instructions and have them rendered automatically.</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---- Geometry: 9 named points (center + 4 corners + 4 edge-midpoints) ----
+  const OUTER = ['A','N','B','E','C','S','D','W'];
+
+  // Flat starting positions (Y=0 plane). X,Z mirror the original 2D square (0-100),
+  // recentered so the middle (Ctr) sits at the origin.
+  const FLAT = {
+    Ctr: new THREE.Vector3(0,0,0),
+    A: new THREE.Vector3(-50,0,-50),
+    B: new THREE.Vector3(50,0,-50),
+    C: new THREE.Vector3(50,0,50),
+    D: new THREE.Vector3(-50,0,50),
+    N: new THREE.Vector3(0,0,-50),
+    E: new THREE.Vector3(50,0,0),
+    S: new THREE.Vector3(0,0,50),
+    W: new THREE.Vector3(-50,0,0),
+  };
+
+  // 8 triangular faces, Ctr + consecutive outer points around the ring.
+  // Non-indexed (each triangle gets its own 3 vertex slots, none shared) so
+  // each panel can carry its own front/back color without fighting its
+  // neighbors over a shared vertex.
+  const PANELS = [];
+  for(let i=0;i<OUTER.length;i++){
+    PANELS.push(['Ctr', OUTER[(i+1)%OUTER.length], OUTER[i]]);
+  }
+  const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
+
+  // Front/back color is decided per panel, per frame, by comparing its
+  // CURRENT normal (from its actual current 3D vertex positions) against
+  // its own ORIGINAL flat-state normal — a fixed reference, computed once,
+  // that never depends on camera position. This is what real paper does:
+  // which side you see depends on how that patch of paper is oriented in
+  // space, never on where the viewer is standing. (An earlier version used
+  // gl_FrontFacing, which IS camera-relative — for a non-flat popped-up
+  // shape that reads as a patchwork that changes as you rotate the view,
+  // which is wrong. It also depends only on well-defined endpoint geometry,
+  // not on tracking a fold-by-fold flip history, which is what made the
+  // very first version of this fragile.)
+  function panelNormal(pts){
+    const e1 = new THREE.Vector3().subVectors(pts[1], pts[0]);
+    const e2 = new THREE.Vector3().subVectors(pts[2], pts[0]);
+    return new THREE.Vector3().crossVectors(e1, e2);
+  }
+  const FLAT_NORMALS = PANELS.map(tri => panelNormal(tri.map(name => FLAT[name])));
+
+  // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim segments.
+  const LINE_PAIRS = [];
+  OUTER.forEach(n=>LINE_PAIRS.push('Ctr',n));
+  for(let i=0;i<OUTER.length;i++) LINE_PAIRS.push(OUTER[i], OUTER[(i+1)%OUTER.length]);
+
+  function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
+    const axis = axisDir.clone().normalize();
+    const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+    const term1 = v.clone().multiplyScalar(cosA);
+    const term2 = new THREE.Vector3().crossVectors(axis, v).multiplyScalar(sinA);
+    const term3 = axis.clone().multiplyScalar(axis.dot(v) * (1 - cosA));
+    return term1.add(term2).add(term3);
+  }
+
+  // Cache a consistently-signed rotation axis per fold step, so every flap
+  // swings toward +Y (up, over the rest of the sheet) regardless of which
+  // order the two crease points happen to be listed in. Only used for the
+  // precrease folds, whose crease endpoints are always at FLAT position
+  // (they're diameters through the center) so reading from FLAT is safe.
+  function axisForStep(step){
+    if(step._axis) return step._axis;
+    const a = FLAT[step.crease[0]], b = FLAT[step.crease[1]];
+    const axisDir = new THREE.Vector3().subVectors(b, a);
+    const probe = rotateAroundAxisAtOrigin(FLAT[step.moving[0]], axisDir, 0.05);
+    if(probe.y < FLAT[step.moving[0]].y){ axisDir.negate(); }
+    step._axis = axisDir;
+    return axisDir;
+  }
+
+  // The real collapse can't be built from a chain of ordinary single-hinge
+  // folds — that was tried and it's mathematically wrong: any sequence of
+  // whole-flap 180° hinge folds along these creases drags the 4 edge
+  // midpoints (N,E,S,W) together into a single point too, when the real
+  // base needs them to stay apart, spread around the rim. The actual
+  // mechanism is a single coordinated motion (the vertical/horizontal
+  // creases and the diagonals moving in opposite senses at once), so it's
+  // modeled here as one target 3D pose, derived from the one constraint
+  // that has to hold throughout: every panel is a rigid triangle, so the
+  // three original side lengths (center-to-corner, center-to-edge-midpoint,
+  // and each rim edge) must still measure the same once collapsed.
+  // Solving that (center pops up by h, the 4 corners converge to one point
+  // h below center, and by the square's symmetry N/E/S/W stay at a shared
+  // height and radius) gives a clean, fully consistent answer:
+  // h = radius = 25*sqrt(2), with N/E/S/W staying in the original z=0
+  // plane, just pulled in from radius 50 to 25*sqrt(2).
+  const K = 25 * Math.SQRT2;
+  const CORNER_PT = new THREE.Vector3(0, -K, 0);
+  const COLLAPSED = {
+    Ctr: new THREE.Vector3(0, K, 0),
+    A: CORNER_PT, B: CORNER_PT, C: CORNER_PT, D: CORNER_PT,
+    N: new THREE.Vector3(0, 0, -K),
+    E: new THREE.Vector3(K, 0, 0),
+    S: new THREE.Vector3(0, 0, K),
+    W: new THREE.Vector3(-K, 0, 0),
+  };
+
+  // ---- Steps ----
+  const STEPS = [
+    { type:'fold', crease:['W','E'], moving:['N','A','B'], instruction:'Fold the top down to the bottom, creating a horizontal center crease.' },
+    { type:'unfold', instruction:'Unfold.' },
+    { type:'fold', crease:['N','S'], moving:['E','B','C'], instruction:'Fold the right side to the left side, creating a vertical center crease.' },
+    { type:'unfold', instruction:'Unfold.' },
+    { type:'fold', crease:['A','C'], moving:['B','N','E'], instruction:'Fold the top-right corner to the bottom-left corner, creating a diagonal crease.' },
+    { type:'unfold', instruction:'Unfold.' },
+    { type:'fold', crease:['B','D'], moving:['A','N','W'], instruction:'Fold the top-left corner to the bottom-right corner, creating the other diagonal crease.' },
+    { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
+    { type:'collapse', instruction:'Now fold on the vertical and horizontal creases while the diagonals push through the other way — the whole sheet collapses at once. All 4 corners meet at one point below center; center pops up as the opposite tip; the 4 edge midpoints stay apart, forming the base\'s rim.' },
+  ];
+
+  // ---- Three.js scene ----
+  const stageEl = document.getElementById('stage');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
+  camera.position.set(150, 70, 180);
+  camera.lookAt(0, -35, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  stageEl.appendChild(renderer.domElement);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.35); dir2.position.set(-100,-50,-100); scene.add(dir2);
+
+  // Non-indexed: 8 panels x 3 vertices, none shared — lets each triangle
+  // keep its own normal (and its own color) under flatShading instead of
+  // averaging with neighbors at the shared Ctr vertex.
+  const geometry = new THREE.BufferGeometry();
+  const vertCount = PANELS.length * 3;
+  const positions = new Float32Array(vertCount * 3);
+  const vColors = new Float32Array(vertCount * 3);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
+
+  const paperMat = new THREE.MeshStandardMaterial({
+    vertexColors:true, side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
+  });
+  const paperMesh = new THREE.Mesh(geometry, paperMat);
+  group.add(paperMesh);
+
+  const linePositions = new Float32Array(LINE_PAIRS.length * 3);
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  group.add(lines);
+
+  // colorFrame defaults to the same positions being rendered, but the
+  // collapse step passes a slightly-nudged one — see animateStep — because
+  // at the exact instant the 4 corners meet, every panel's normal is
+  // mathematically exactly perpendicular to its flat-state normal (a
+  // genuine tie, not a bug), so comparing right at that instant is
+  // arbitrary. Nudging the comparison a hair before that instant keeps it
+  // consistent with the rest of the animation instead of snapping.
+  function applyFrame(frame, colorFrame){
+    const cframe = colorFrame || frame;
+    let vi = 0;
+    PANELS.forEach((tri, pi)=>{
+      const pts = tri.map(name => frame[name] || FLAT[name]);
+      const cpts = tri.map(name => cframe[name] || FLAT[name]);
+      const isFront = panelNormal(cpts).dot(FLAT_NORMALS[pi]) >= 0;
+      const c = isFront ? RED : WHITE;
+      pts.forEach(p=>{
+        positions[vi*3]=p.x; positions[vi*3+1]=p.y; positions[vi*3+2]=p.z;
+        vColors[vi*3]=c[0]; vColors[vi*3+1]=c[1]; vColors[vi*3+2]=c[2];
+        vi++;
+      });
+    });
+    geometry.attributes.position.needsUpdate = true;
+    geometry.attributes.color.needsUpdate = true;
+    geometry.computeVertexNormals();
+
+    LINE_PAIRS.forEach((name,i)=>{
+      const p = frame[name] || FLAT[name];
+      linePositions[i*3]=p.x; linePositions[i*3+1]=p.y; linePositions[i*3+2]=p.z;
+    });
+    lineGeo.attributes.position.needsUpdate = true;
+  }
+
+  applyFrame(FLAT);
+
+  function resize(){
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    if(!w || !h) return;
+    renderer.setSize(w, h, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stageEl);
+  resize();
+
+  let autoRotate = 0;
+  function renderLoop(){
+    autoRotate += 0.003;
+    group.rotation.y = Math.sin(autoRotate) * 0.35;
+    renderer.render(scene, camera);
+    requestAnimationFrame(renderLoop);
+  }
+  renderLoop();
+
+  // ---- Playback state ----
+  let stepIndex = 0, animating = false, playing = false;
+
+  const el = {
+    stepCount: document.getElementById('stepCount'),
+    badge: document.getElementById('badge'),
+    instruction: document.getElementById('instruction'),
+    foldBtn: document.getElementById('foldBtn'),
+    playBtn: document.getElementById('playBtn'),
+    dots: document.getElementById('dots'),
+    explainerText: document.getElementById('explainerText'),
+    codePanel: document.getElementById('codePanel'),
+    stageCaption: document.getElementById('stageCaption'),
+  };
+
+  el.explainerText.innerHTML = 'Precrease folds are ordinary single-hinge rotations. The collapse is different: it\'s one coordinated move, not a chain of hinges, so it\'s animated as a straight interpolation between the flat pose and the one rigid 3D pose that keeps every panel\'s original side lengths intact. Front/back color compares each panel\'s current normal to its own original flat normal — a fixed reference, not the camera — so a panel\'s color is a property of how it\'s actually folded, not of which way you\'re looking at it.';
+
+  function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+
+  function animateStep(step, reverse, onDone){
+    const isCollapse = step.type==='collapse';
+    const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
+    const start = performance.now();
+    const axisDir = isCollapse ? null : axisForStep(step);
+
+    function computeFrame(p){
+      if(isCollapse){
+        const out = {};
+        ['Ctr', ...OUTER].forEach(name=>{
+          out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], p);
+        });
+        return out;
+      }
+      const angleRad = p * Math.PI;
+      // A folded flap ends up exactly coplanar with the static half
+      // underneath it (folding a rectangle in half always lands one half
+      // exactly on the other) — without help, the GPU's depth test resolves
+      // that dead tie arbitrarily, which is why some folds correctly showed
+      // the folded-over (white) side on top and others silently didn't. The
+      // flap is the one that should render on top (that's what "folded
+      // over" means), so lift it a hair as it approaches fully folded —
+      // zero at the flat start, where there's no overlap yet to resolve.
+      const lift = (angleRad / Math.PI) * 0.3;
+      const out = { Ctr: FLAT.Ctr.clone() };
+      OUTER.forEach(name=>{
+        out[name] = step.moving.includes(name)
+          ? rotateAroundAxisAtOrigin(FLAT[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
+          : FLAT[name].clone();
+      });
+      return out;
+    }
+
+    function frame(now){
+      let t = Math.min(1, (now-start)/duration);
+      const te = easeInOut(t);
+      const p = reverse ? (1-te) : te;
+      // At the exact moment the collapse finishes, every panel's normal is
+      // mathematically exactly perpendicular to its flat normal — a genuine
+      // tie (each panel has tilted a full quarter-turn but not past it).
+      // The whole animation up to that instant reads as consistently red,
+      // so resolve the tie the same way rather than snapping to white —
+      // computing color a hair BEFORE the tie keeps it decisively on the
+      // "still red" side with no last-instant jump.
+      const colorP = isCollapse ? Math.min(p, 0.99) : p;
+      applyFrame(computeFrame(p), colorP === p ? undefined : computeFrame(colorP));
+      if(t<1){ requestAnimationFrame(frame); return; }
+      onDone();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function setButtons(on){ el.foldBtn.disabled=!on; el.playBtn.disabled=!on; }
+
+  function updatePanel(){
+    const total = STEPS.length;
+    if(stepIndex>=total){
+      el.stepCount.textContent='Complete';
+      el.badge.textContent='Done'; el.badge.className='badge done';
+      el.instruction.textContent='All 4 corners meet at one point below center, with center popped up as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
+      el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
+      el.stageCaption.textContent='waterbomb base — collapsed';
+      el.codePanel.innerHTML = '<span class="code-str">// one rigid target pose, solved from each panel\'s\n// fixed side lengths — not a chain of hinge folds.</span>';
+    } else {
+      const step = STEPS[stepIndex];
+      el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
+      el.instruction.textContent = step.instruction;
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : (step.type==='collapse' ? 'Collapse →' : 'Fold →');
+      el.foldBtn.disabled = false;
+      if(step.type==='collapse'){
+        el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
+        el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
+        el.codePanel.innerHTML = `{
+  <span class="code-str">// Ctr up, all 4 corners to one point below,</span>
+  <span class="code-str">// N/E/S/W pulled in — solved from rigid side lengths</span>
+}`;
+      } else if(step.type==='unfold'){
+        el.badge.textContent='Unfold'; el.badge.className='badge done';
+        el.stageCaption.textContent='reversing the previous crease';
+        el.codePanel.innerHTML = '<span class="code-str">// same hinge rotation, animated back to 0°</span>';
+      } else {
+        el.badge.textContent='Fold'; el.badge.className='badge valley';
+        el.stageCaption.textContent='hinge rotation about the crease line, through center';
+        el.codePanel.innerHTML = `{
+  crease: [<span class="code-str">'${step.crease[0]}'</span>, <span class="code-str">'${step.crease[1]}'</span>],
+  moving: [${step.moving.map(m=>`<span class="code-str">'${m}'</span>`).join(', ')}]
+}`;
+      }
+    }
+    el.dots.innerHTML = STEPS.map((_,i)=>`<span class="dot${i<stepIndex?' filled':''}"></span>`).join('');
+  }
+
+  function advance(){
+    return new Promise(resolve=>{
+      if(animating || stepIndex>=STEPS.length){ resolve(); return; }
+      animating = true; setButtons(false);
+      const step = STEPS[stepIndex];
+      const isUnfold = step.type==='unfold';
+      const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
+      animateStep(foldStep, isUnfold, ()=>{
+        stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
+      });
+    });
+  }
+
+  function reset(){
+    stepIndex = 0; animating = false;
+    applyFrame(FLAT);
+    updatePanel();
+  }
+
+  el.foldBtn.addEventListener('click', ()=>{
+    if(stepIndex>=STEPS.length){ reset(); return; }
+    advance();
+  });
+  el.playBtn.addEventListener('click', async ()=>{
+    if(playing){ playing=false; el.playBtn.textContent='▶ Play all'; return; }
+    if(stepIndex>=STEPS.length){ reset(); await new Promise(r=>setTimeout(r,200)); }
+    playing = true; el.playBtn.textContent='■ Stop';
+    while(playing && stepIndex<STEPS.length){
+      await advance();
+      if(!playing) break;
+      await new Promise(r=>setTimeout(r, reducedMotion?50:450));
+    }
+    playing=false; el.playBtn.textContent='▶ Play all';
+  });
+
+  updatePanel();
+})();
+</script>
+</body>
+</html>
