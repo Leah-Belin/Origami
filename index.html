@@ -55,7 +55,8 @@ h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem
 @media (max-width: 780px){ .board{ grid-template-columns: 1fr; } }
 
 .stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
-.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; }
+.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; cursor:grab; touch-action:none; }
+.stage-outer.grabbing{ cursor:grabbing; }
 .stage-outer canvas{ display:block; width:100%; height:100%; }
 .stage-caption{ margin-top:.85rem; font-family:'IBM Plex Mono', monospace; font-size:.74rem; color:var(--ink-muted); text-align:center; }
 
@@ -324,10 +325,36 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   new ResizeObserver(resize).observe(stageEl);
   resize();
 
-  let autoRotate = 0;
+  // Gentle auto-rotate until the user first drags, then it's fully in
+  // their hands — dragging (mouse or touch, via Pointer Events so both
+  // are handled the same way) spins the model around Y and tilts it a
+  // little around X, clamped so it can't flip upside down.
+  let autoRotate = 0, userRotating = false, dragging = false, lastX = 0, lastY = 0;
+
+  stageEl.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    userRotating = true;
+    lastX = e.clientX; lastY = e.clientY;
+    stageEl.setPointerCapture(e.pointerId);
+    stageEl.classList.add('grabbing');
+  });
+  stageEl.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    group.rotation.y += dx * 0.008;
+    group.rotation.x = Math.max(-0.6, Math.min(0.7, group.rotation.x + dy * 0.008));
+  });
+  function endDrag(){ dragging = false; stageEl.classList.remove('grabbing'); }
+  stageEl.addEventListener('pointerup', endDrag);
+  stageEl.addEventListener('pointercancel', endDrag);
+  stageEl.addEventListener('pointerleave', endDrag);
+
   function renderLoop(){
-    autoRotate += 0.003;
-    group.rotation.y = Math.sin(autoRotate) * 0.35;
+    if(!userRotating){
+      autoRotate += 0.003;
+      group.rotation.y = Math.sin(autoRotate) * 0.35;
+    }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
