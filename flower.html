@@ -226,16 +226,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     W: new THREE.Vector3(-50,0,0),
   };
 
-  // First squash-fold prototype (corner A's flap → one petal of the
-  // flower base): both panels touching A share a
-  // crease at the same physical point, E_A, on the Ctr–A edge — confirmed
-  // against real paper at ~71% of the way from the apex (N/W, which are
-  // already the same point post-collapse) toward A. That fraction is
-  // exactly sqrt(2)/2: it's the point where folding A onto E_A's crease
-  // lands A exactly on the midpoint of Ctr–A, which only holds at this
-  // specific ratio for this triangle's proportions.
+  // First squash-fold prototype (corner C's flap → one petal of the
+  // flower base — C rather than A because C is the corner nearest the
+  // default camera angle, so the fold is actually visible without
+  // rotating the model): both panels touching C share a crease at the
+  // same physical point, E_C, on the Ctr–C edge — confirmed against real
+  // paper at ~71% of the way from the apex (E/S, which are already the
+  // same point post-collapse) toward C. That fraction is exactly
+  // sqrt(2)/2: it's the point where folding C onto E_C's crease lands C
+  // exactly on the midpoint of Ctr–C, which only holds at this specific
+  // ratio for this triangle's proportions.
   const SQUASH_T = Math.SQRT2 / 2;
-  FLAT.E_A = new THREE.Vector3().lerpVectors(FLAT.Ctr, FLAT.A, SQUASH_T);
+  FLAT.E_C = new THREE.Vector3().lerpVectors(FLAT.Ctr, FLAT.C, SQUASH_T);
 
   // The real sequence turns the paper over between the horizontal/vertical
   // creases and the diagonal ones — that's what lets every crease be an
@@ -251,22 +253,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
 
   // 8 triangular faces, Ctr + consecutive outer points around the ring —
-  // except the two touching corner A, which are pre-split along the
-  // apex→E_A crease (see SQUASH_T above) into 4 sub-panels. Before the
-  // squash step runs, E_A always sits exactly on the Ctr–A edge, so the
-  // split is invisible; the squash step is what folds the two A-side
+  // except the two touching corner C, which are pre-split along the
+  // apex→E_C crease (see SQUASH_T above) into 4 sub-panels. Before the
+  // squash step runs, E_C always sits exactly on the Ctr–C edge, so the
+  // split is invisible; the squash step is what folds the two C-side
   // sub-panels away from the two Ctr-side ones. Written out explicitly
   // (rather than patching the loop below) since the split isn't something
   // a general loop over OUTER should have to know about.
   const PANELS = [
-    ['Ctr','N','E_A'], ['N','A','E_A'],
+    ['Ctr','N','A'],
     ['Ctr','B','N'],
     ['Ctr','E','B'],
-    ['Ctr','C','E'],
-    ['Ctr','S','C'],
+    ['Ctr','E_C','E'], ['E_C','C','E'],
+    ['Ctr','S','E_C'], ['S','C','E_C'],
     ['Ctr','D','S'],
     ['Ctr','W','D'],
-    ['Ctr','E_A','W'], ['E_A','A','W'],
+    ['Ctr','A','W'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
@@ -335,11 +337,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     C: new THREE.Vector3(R, 25, R),
     D: new THREE.Vector3(-R, 25, R),
   };
-  COLLAPSED.E_A = new THREE.Vector3().lerpVectors(COLLAPSED.Ctr, COLLAPSED.A, SQUASH_T);
-  // E_A doesn't move during the squash — it's the crease itself (see the
+  COLLAPSED.E_C = new THREE.Vector3().lerpVectors(COLLAPSED.Ctr, COLLAPSED.C, SQUASH_T);
+  // E_C doesn't move during the squash — it's the crease itself (see the
   // squash branch of frameForStep) — so its collapsed position is a fixed
   // reference, computed once here rather than every frame.
-  const E_A_COLLAPSED = COLLAPSED.E_A.clone();
+  const E_C_COLLAPSED = COLLAPSED.E_C.clone();
 
   // ---- Steps ----
   const STEPS = [
@@ -601,21 +603,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER].forEach(name=>{
         out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
-      out.E_A = new THREE.Vector3().lerpVectors(out.Ctr, out.A, SQUASH_T);
+      out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
       return out;
     }
     if(step.type==='squash'){
-      // The two panels touching corner A were creased together (same
-      // physical crease, apex→E_A) as part of the collapsed geometry
-      // itself — E_A sits fixed on that crease; only A (and the two
+      // The two panels touching corner C were creased together (same
+      // physical crease, apex→E_C) as part of the collapsed geometry
+      // itself — E_C sits fixed on that crease; only C (and the two
       // sub-panels carrying it) swings, 180° about the line through
-      // MERGE_PT (where N and W already coincide) and E_A.
+      // MERGE_PT (where E and S already coincide) and E_C.
       const angleRad = p * Math.PI;
-      const axis = new THREE.Vector3().subVectors(E_A_COLLAPSED, MERGE_PT);
-      const relA = new THREE.Vector3().subVectors(COLLAPSED.A, MERGE_PT);
+      const axis = new THREE.Vector3().subVectors(E_C_COLLAPSED, MERGE_PT);
+      const relC = new THREE.Vector3().subVectors(COLLAPSED.C, MERGE_PT);
       const out = Object.assign({}, COLLAPSED);
-      out.A = rotateAroundAxisAtOrigin(relA, axis, angleRad).add(MERGE_PT);
-      out.E_A = E_A_COLLAPSED.clone();
+      out.C = rotateAroundAxisAtOrigin(relC, axis, angleRad).add(MERGE_PT);
+      out.E_C = E_C_COLLAPSED.clone();
       return out;
     }
     if(step.type==='flip'){
@@ -632,7 +634,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER].forEach(name=>{
         out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
       });
-      out.E_A = new THREE.Vector3().lerpVectors(out.Ctr, out.A, SQUASH_T);
+      out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
       return out;
     }
     const ref = step.ref || FLAT;
@@ -648,7 +650,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
         : ref[name].clone();
     });
-    out.E_A = new THREE.Vector3().lerpVectors(out.Ctr, out.A, SQUASH_T);
+    out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
     return out;
   }
 
