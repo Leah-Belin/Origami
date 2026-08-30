@@ -374,9 +374,19 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
+        // Stop just short of p=1. At the exact mathematical endpoint every
+        // panel sits exactly perpendicular to its own flat orientation —
+        // a genuine tie with no well-defined "outward" side, which is why
+        // the finished base was showing an arbitrary red/white patchwork
+        // instead of solid red. The last fraction of a percent of motion
+        // is visually imperceptible, so stopping short of the tie keeps
+        // every panel decisively on the same side it's been on the whole
+        // animation — the paper's back stays tucked inside, as it does on
+        // a real folded base.
+        const pc = Math.min(p, 0.985);
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
-          out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], p);
+          out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
         });
         return out;
       }
