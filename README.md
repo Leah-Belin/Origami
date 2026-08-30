@@ -18,13 +18,18 @@ sharing one engine pattern:
   wrong — it drags points together that need to stay apart); instead it's
   modeled as a single 3D target pose, solved from the constraint that every
   triangular panel keeps its original side lengths.
-- `crane.html` — the crane's **preliminary base**, in progress. Same
+- `flower.html` — a traditional **flower base**, in progress. Same
   precrease as the waterbomb base; the collapse is the same single-vertex
   mechanism with the opposite 4 points converging (edge midpoints meet,
   corners spread as the rim — the standard fact that the waterbomb and
   preliminary bases are the same crease pattern with reversed mountain/
-  valley assignment). The rest of the crane needs fold moves — squash,
-  petal, reverse — this engine doesn't support yet; see Roadmap.
+  valley assignment), then a squash fold on one of the 4 flaps to form
+  its first petal — the same squash fold on the other 3 finishes it. This
+  was originally built (and briefly shipped) as a crane page; a crane's
+  bird base needs a different squash — two flaps folded together as one
+  paired kite, not one flap at a time — which this page doesn't do, so
+  it's named for what it actually produces. A real crane page, with the
+  correct paired-flap squash, is still future work; see Roadmap.
 
 Front/back paper coloring on both pages comes from the GPU's own
 per-pixel "which side of this triangle is facing the camera" test
@@ -38,13 +43,17 @@ no build step required.
 ## Roadmap
 
 - [x] Waterbomb base — precrease + collapse, verified against real folded paper.
-- [~] Traditional crane — preliminary base done (precrease + collapse, same
-      mechanism as the waterbomb base, verified). Still needs squash-fold,
-      petal-fold, and reverse-fold primitives for the rest of the sequence
-      (narrowing the legs, shaping the head and tail) — these need the
-      geometry to support panels splitting into new panels mid-sequence,
-      and rotation about an arbitrary axis (not just one through the
-      center), neither of which the engine has yet.
+- [~] Flower base — preliminary base done (precrease + collapse, same
+      mechanism as the waterbomb base, verified); the squash-fold primitive
+      is built and verified for 1 of the 4 flaps (the engine's first
+      panel-splitting fold — panels used to be fixed at load time). Still
+      needs the same squash on the other 3 flaps to finish it.
+- [ ] Traditional crane — needs its own page: same preliminary base, but a
+      different squash (two flaps folded together as one paired kite, not
+      one at a time, per real bird-base instructions), plus reverse-fold
+      primitives for the head and tail — reverse folds need rotation about
+      an arbitrary axis (not just one through the center), which the
+      engine doesn't support yet.
 - [ ] Generalize the engine so a new model is a data file, not new code —
       currently the geometry, panels, and fold steps are hand-coded per
       page.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Fold Along — Crane</title>
+<title>Fold Along — Flower base</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -165,7 +165,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     <span class="site-title">Fold Along</span>
     <nav class="site-nav">
       <a href="index.html">Waterbomb base</a>
-      <a href="crane.html" class="current" aria-current="page">Crane</a>
+      <a href="flower.html" class="current" aria-current="page">Flower base</a>
     </nav>
   </div>
 </div>
@@ -174,14 +174,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
 <div class="wrap">
   <header>
-    <h1>Crane — preliminary base</h1>
+    <h1>Flower base</h1>
   </header>
-  <p class="progress-note">In progress: this covers the crane's first stage, the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus a first squash fold on one flap, the move that narrows a flap into a leg on the way to the bird base. The other 3 flaps need the same squash fold, and the head and tail still need reverse folds this engine doesn't support yet.</p>
+  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus a first squash fold on one flap, the move that narrows a flap into one of the flower base's four petals. The other 3 flaps need the same squash fold to finish it.</p>
 
   <main>
     <div class="board">
       <div class="stage-card">
-        <div class="stage-outer" id="stage" tabindex="0" role="application" aria-label="3D model of the crane preliminary base fold, draggable to rotate — use arrow keys when focused to rotate.">
+        <div class="stage-outer" id="stage" tabindex="0" role="application" aria-label="3D model of the flower base fold, draggable to rotate — use arrow keys when focused to rotate.">
           <div class="drag-hint" id="dragHint" aria-hidden="true">↻ Drag to rotate</div>
         </div>
         <p class="stage-caption" id="stageCaption">square sheet, flat</p>
@@ -226,8 +226,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     W: new THREE.Vector3(-50,0,0),
   };
 
-  // First squash-fold prototype (corner A's flap → the start of a petal
-  // fold, toward the crane's bird base): both panels touching A share a
+  // First squash-fold prototype (corner A's flap → one petal of the
+  // flower base): both panels touching A share a
   // crease at the same physical point, E_A, on the Ctr–A edge — confirmed
   // against real paper at ~71% of the way from the apex (N/W, which are
   // already the same point post-collapse) toward A. That fraction is
@@ -354,7 +354,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'squash', instruction:'Squash-fold one flap: crease it from the apex in toward the center, then fold the flap over along that crease — the first move toward narrowing a flap into a leg, on the way to the bird base.' },
+    { type:'squash', instruction:'Squash-fold one flap: crease it from the apex in toward the center, then fold the flap over along that crease — the first of the flower base\'s four petals.' },
   ];
 
   // ---- Three.js scene ----
@@ -696,7 +696,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The preliminary base is complete, and one flap has been squash-folded in — the first step toward narrowing a flap into a leg. The other 3 flaps need the same squash fold, then reverse-folds for the head and tail, to finish the crane.';
+      el.instruction.textContent='The preliminary base is complete, and one flap has been squash-folded into the first petal. The other 3 flaps need the same squash fold to finish the flower base.';
       el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
       el.stageCaption.textContent='preliminary base — one flap squashed';
     } else {
