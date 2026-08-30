@@ -266,9 +266,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // True two-sided paper: gl_FrontFacing asks, per pixel, which side of
   // the triangle currently faces the camera, so front/back color is
   // always a property of the paper's actual orientation, not tracked fold
-  // history or camera-independent guesswork. Front is a uniform (not baked
-  // into the shader source) so the color swatches can change it live.
-  const colorUniforms = { uFront: { value: new THREE.Color(...RED) }, uBack: { value: new THREE.Color(...WHITE) } };
+  // history or camera-independent guesswork. The front face (uFront) is
+  // the side that starts face-up on the flat sheet; confirmed against
+  // real folded paper, that side ends up hidden inside the finished base.
+  // So uFront is fixed white (the paper's "wrong side"), and the
+  // customizable color lives on uBack, the side that starts face-down and
+  // ends up showing. uBack is a uniform (not baked into the shader
+  // source) so the color swatches can change it live.
+  const colorUniforms = { uFront: { value: new THREE.Color(...WHITE) }, uBack: { value: new THREE.Color(...RED) } };
   const paperMat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
@@ -376,7 +381,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ];
   const swatchesEl = document.getElementById('swatches');
   function setPaperColor(hex, save){
-    colorUniforms.uFront.value.set(hex);
+    colorUniforms.uBack.value.set(hex);
     swatchesEl.querySelectorAll('.swatch').forEach(b=>{
       b.classList.toggle('active', b.dataset.hex.toLowerCase()===hex.toLowerCase());
     });
@@ -421,8 +426,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         // of landing exactly on p=1: at the exact endpoint every panel
         // sits exactly perpendicular to its own flat orientation, a
         // genuine tie confirmed (against real folded paper) to resolve
-        // toward the flipped side — whichever side starts face up ends up
-        // tucked inside, not showing on the outside.
+        // toward the flipped side (uBack, the customizable color) —
+        // whichever side starts face up (uFront) ends up tucked inside,
+        // not showing on the outside.
         const pc = p * 1.02;
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{

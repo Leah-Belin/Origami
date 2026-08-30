@@ -280,9 +280,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // never changes; this just asks, per pixel, which side is currently
   // facing the camera.
   //
-  // The front color is a uniform (not baked into the shader source) so the
-  // color swatches can change it live, without recompiling.
-  const colorUniforms = { uFront: { value: new THREE.Color(...RED) }, uBack: { value: new THREE.Color(...WHITE) } };
+  // The front face (uFront) is the side that starts face-up on the flat
+  // sheet; confirmed against real folded paper, that side ends up hidden
+  // inside the finished base, not showing on the outside. So uFront is
+  // fixed white (the paper's "wrong side"), and the customizable color
+  // lives on uBack, the side that starts face-down and ends up showing.
+  // uBack is a uniform (not baked into the shader source) so the color
+  // swatches can change it live, without recompiling.
+  const colorUniforms = { uFront: { value: new THREE.Color(...WHITE) }, uBack: { value: new THREE.Color(...RED) } };
   const paperMat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
@@ -390,7 +395,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ];
   const swatchesEl = document.getElementById('swatches');
   function setPaperColor(hex, save){
-    colorUniforms.uFront.value.set(hex);
+    colorUniforms.uBack.value.set(hex);
     swatchesEl.querySelectorAll('.swatch').forEach(b=>{
       b.classList.toggle('active', b.dataset.hex.toLowerCase()===hex.toLowerCase());
     });
@@ -431,16 +436,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
-        // Stop just short of p=1. At the exact mathematical endpoint every
-        // panel sits exactly perpendicular to its own flat orientation —
-        // a genuine tie with no well-defined "outward" side, which is why
-        // the finished base was showing an arbitrary red/white patchwork.
-        // Confirmed against real folded paper: whichever side starts face
-        // up ends up on the INSIDE of the finished base, not the outside —
-        // so the tie needs to resolve toward the flipped side, not the
-        // starting side. Overshooting the target pose by a couple percent
-        // (imperceptible in shape) pushes every panel decisively past the
-        // tie in that direction, instead of stopping short of it.
+        // At the exact mathematical endpoint (p=1) every panel sits exactly
+        // perpendicular to its own flat orientation — a genuine tie with no
+        // well-defined "outward" side. Confirmed against real folded paper:
+        // whichever side starts face-up ends up on the INSIDE of the
+        // finished base, not the outside — so the tie resolves toward the
+        // flipped side (uBack, the customizable color), not the starting
+        // side (uFront, fixed white). Overshooting the target pose by a
+        // couple percent (imperceptible in shape) pushes every panel
+        // decisively past the tie in that direction.
         const pc = p * 1.02;
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
