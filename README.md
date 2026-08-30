@@ -23,13 +23,15 @@ sharing one engine pattern:
   mechanism with the opposite 4 points converging (edge midpoints meet,
   corners spread as the rim — the standard fact that the waterbomb and
   preliminary bases are the same crease pattern with reversed mountain/
-  valley assignment), then a squash fold on one of the 4 flaps to form
-  its first petal — the same squash fold on the other 3 finishes it. This
-  was originally built (and briefly shipped) as a crane page; a crane's
-  bird base needs a different squash — two flaps folded together as one
-  paired kite, not one flap at a time — which this page doesn't do, so
-  it's named for what it actually produces. A real crane page, with the
-  correct paired-flap squash, is still future work; see Roadmap.
+  valley assignment), then a precrease for the squash fold, done on all 4
+  flaps at once (fold each loose corner down to the bottom point, then
+  unfold). The squash fold itself — opening a flap and pressing it flat
+  along that crease to form a petal — is still to come. This was
+  originally built (and briefly shipped) as a crane page; a crane's bird
+  base needs a different squash — two flaps folded together as one paired
+  kite, not one flap at a time — which this page doesn't do, so it's named
+  for what it actually produces. A real crane page, with the correct
+  paired-flap squash, is still future work; see Roadmap.
 
 Front/back paper coloring on both pages comes from the GPU's own
 per-pixel "which side of this triangle is facing the camera" test
@@ -44,10 +46,13 @@ no build step required.
 
 - [x] Waterbomb base — precrease + collapse, verified against real folded paper.
 - [~] Flower base — preliminary base done (precrease + collapse, same
-      mechanism as the waterbomb base, verified); the squash-fold primitive
-      is built and verified for 1 of the 4 flaps (the engine's first
-      panel-splitting fold — panels used to be fixed at load time). Still
-      needs the same squash on the other 3 flaps to finish it.
+      mechanism as the waterbomb base, verified); the squash-fold's own
+      precrease is done on all 4 flaps at once (fold each corner to the
+      bottom point, then unfold — the engine's first panel-splitting fold,
+      one split per flap). Still needs the actual squash: opening one flap
+      and pressing it flat along that crease to form a petal, repeated for
+      all 4 (a real squash fold needs a flap's two layers to move
+      independently, which the engine doesn't support yet).
 - [ ] Traditional crane — needs its own page: same preliminary base, but a
       different squash (two flaps folded together as one paired kite, not
       one at a time, per real bird-base instructions), plus reverse-fold

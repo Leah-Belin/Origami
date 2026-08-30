@@ -176,7 +176,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <header>
     <h1>Flower base</h1>
   </header>
-  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus a first squash fold on one flap, the move that narrows a flap into one of the flower base's four petals. The other 3 flaps need the same squash fold to finish it.</p>
+  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, done on all 4 flaps at once (fold each loose corner down to the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
 
   <main>
     <div class="board">
@@ -188,7 +188,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 12</span>
+          <span class="step-count" id="stepCount">Step 1 of 13</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -226,18 +226,32 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     W: new THREE.Vector3(-50,0,0),
   };
 
-  // First squash-fold prototype (corner C's flap → one petal of the
-  // flower base — C rather than A because C is the corner nearest the
-  // default camera angle, so the fold is actually visible without
-  // rotating the model): both panels touching C share a crease at the
-  // same physical point, E_C, on the Ctr–C edge — confirmed against real
-  // paper at ~71% of the way from the apex (E/S, which are already the
-  // same point post-collapse) toward C. That fraction is exactly
-  // sqrt(2)/2: it's the point where folding C onto E_C's crease lands C
-  // exactly on the midpoint of Ctr–C, which only holds at this specific
-  // ratio for this triangle's proportions.
-  const SQUASH_T = Math.SQRT2 / 2;
-  FLAT.E_C = new THREE.Vector3().lerpVectors(FLAT.Ctr, FLAT.C, SQUASH_T);
+  // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
+  // corner down until it touches the bottom point (Ctr) — the crease this
+  // leaves, once unfolded, is what a real squash fold later opens and
+  // presses flat along. Within one flap's rigid triangle (Ctr –
+  // mergedEdgeMidpoint – corner: a right isosceles triangle, legs 50/50,
+  // hypotenuse 70.71, right angle at the merged edge-midpoint), the crease
+  // that lands the corner exactly on Ctr is the perpendicular bisector of
+  // the Ctr–corner hypotenuse — and a right triangle's hypotenuse midpoint
+  // is always equidistant from all 3 vertices, so that bisector is just
+  // the median from the merged-edge-midpoint vertex to the hypotenuse's
+  // own midpoint. So the crease point for every corner is simply the
+  // midpoint of Ctr–corner (t=0.5) — the same fraction for all 4, no
+  // per-corner ratio to derive.
+  const CORNER_FOLD_T = 0.5;
+  // Sets the 4 crease-midpoint keys (mA..mD) on a state object that
+  // already has Ctr and A-D, from whatever those points currently are —
+  // used for FLAT below, and again for every COLLAPSED-derived state in
+  // frameForStep, so the crease keeps tracking Ctr/the corners instead of
+  // drifting once they move.
+  function withMidpoints(state){
+    ['A','B','C','D'].forEach(X=>{
+      state['m'+X] = new THREE.Vector3().lerpVectors(state.Ctr, state[X], CORNER_FOLD_T);
+    });
+    return state;
+  }
+  withMidpoints(FLAT);
 
   // The real sequence turns the paper over between the horizontal/vertical
   // creases and the diagonal ones — that's what lets every crease be an
@@ -252,23 +266,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     FLIPPED_FLAT[name] = new THREE.Vector3(-p.x, p.y, p.z);
   });
 
-  // 8 triangular faces, Ctr + consecutive outer points around the ring —
-  // except the two touching corner C, which are pre-split along the
-  // apex→E_C crease (see SQUASH_T above) into 4 sub-panels. Before the
-  // squash step runs, E_C always sits exactly on the Ctr–C edge, so the
-  // split is invisible; the squash step is what folds the two C-side
-  // sub-panels away from the two Ctr-side ones. Written out explicitly
-  // (rather than patching the loop below) since the split isn't something
-  // a general loop over OUTER should have to know about.
+  // 16 triangular faces: the 8 original Ctr+consecutive-outer-point
+  // panels, each pre-split along its own corner's Ctr→corner crease (see
+  // CORNER_FOLD_T above) into 2 sub-panels. Before the precrease step
+  // runs, every mX point sits exactly on its Ctr–corner edge, so every
+  // split is invisible; the precrease step is what folds each flap's
+  // corner-side sub-panel down toward Ctr. Written out explicitly (rather
+  // than patching the loop below) since the split isn't something a
+  // general loop over OUTER should have to know about.
   const PANELS = [
-    ['Ctr','N','A'],
-    ['Ctr','B','N'],
-    ['Ctr','E','B'],
-    ['Ctr','E_C','E'], ['E_C','C','E'],
-    ['Ctr','S','E_C'], ['S','C','E_C'],
-    ['Ctr','D','S'],
-    ['Ctr','W','D'],
-    ['Ctr','A','W'],
+    ['Ctr','mA','N'], ['mA','A','N'],
+    ['Ctr','N','mB'], ['N','B','mB'],
+    ['Ctr','mB','E'], ['mB','B','E'],
+    ['Ctr','mC','E'], ['mC','C','E'],
+    ['Ctr','S','mC'], ['S','C','mC'],
+    ['Ctr','S','mD'], ['S','D','mD'],
+    ['Ctr','mD','W'], ['mD','D','W'],
+    ['Ctr','W','mA'], ['W','A','mA'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
@@ -337,11 +351,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     C: new THREE.Vector3(R, 25, R),
     D: new THREE.Vector3(-R, 25, R),
   };
-  COLLAPSED.E_C = new THREE.Vector3().lerpVectors(COLLAPSED.Ctr, COLLAPSED.C, SQUASH_T);
-  // E_C doesn't move during the squash — it's the crease itself (see the
-  // squash branch of frameForStep) — so its collapsed position is a fixed
-  // reference, computed once here rather than every frame.
-  const E_C_COLLAPSED = COLLAPSED.E_C.clone();
+  withMidpoints(COLLAPSED);
 
   // ---- Steps ----
   const STEPS = [
@@ -356,7 +366,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'squash', instruction:'Squash-fold one flap: crease it from the apex in toward the center, then fold the flap over along that crease — the first of the flower base\'s four petals.' },
+    { type:'precrease-corners', instruction:'Fold all 4 flaps\' loose corners down to the bottom point — this creases each flap along the line it will later open and press flat.' },
+    { type:'unfold', instruction:'Unfold. Every flap now carries that crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
   ];
 
   // ---- Three.js scene ----
@@ -603,21 +614,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER].forEach(name=>{
         out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
-      out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
-      return out;
+      return withMidpoints(out);
     }
-    if(step.type==='squash'){
-      // The two panels touching corner C were creased together (same
-      // physical crease, apex→E_C) as part of the collapsed geometry
-      // itself — E_C sits fixed on that crease; only C (and the two
-      // sub-panels carrying it) swings, 180° about the line through
-      // MERGE_PT (where E and S already coincide) and E_C.
-      const angleRad = p * Math.PI;
-      const axis = new THREE.Vector3().subVectors(E_C_COLLAPSED, MERGE_PT);
-      const relC = new THREE.Vector3().subVectors(COLLAPSED.C, MERGE_PT);
+    if(step.type==='precrease-corners'){
+      // Each flap folds along its own crease (Ctr-corner's midpoint —
+      // see CORNER_FOLD_T above) at once: for corner X, that's a 180°
+      // hinge about the axis through mX and the shared merge point,
+      // which — since the merge point is the crease triangle's right-
+      // angle vertex, equidistant from both Ctr and X — lands X exactly
+      // on Ctr at p=1. Stops just short of that exact endpoint for the
+      // same reason the base collapse does: every corner lands exactly
+      // on Ctr, a genuine coincidence the depth test would otherwise
+      // have to break a tie on.
+      const pc = Math.min(p, 0.98);
+      const angleRad = pc * Math.PI;
       const out = Object.assign({}, COLLAPSED);
-      out.C = rotateAroundAxisAtOrigin(relC, axis, angleRad).add(MERGE_PT);
-      out.E_C = E_C_COLLAPSED.clone();
+      ['A','B','C','D'].forEach(X=>{
+        const mid = COLLAPSED['m'+X];
+        const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
+        const rel = new THREE.Vector3().subVectors(COLLAPSED[X], mid);
+        out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(mid);
+      });
       return out;
     }
     if(step.type==='flip'){
@@ -634,8 +651,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER].forEach(name=>{
         out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
       });
-      out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
-      return out;
+      return withMidpoints(out);
     }
     const ref = step.ref || FLAT;
     const angleRad = p * Math.PI;
@@ -650,8 +666,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
         : ref[name].clone();
     });
-    out.E_C = new THREE.Vector3().lerpVectors(out.Ctr, out.C, SQUASH_T);
-    return out;
+    return withMidpoints(out);
   }
 
   function animateStep(step, reverse, onDone){
@@ -698,14 +713,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The preliminary base is complete, and one flap has been squash-folded into the first petal. The other 3 flaps need the same squash fold to finish the flower base.';
+      el.instruction.textContent='The preliminary base is complete, and every flap now carries the crease a squash fold opens along. Next: open and press one flap flat along it — the move that turns it into the flower base\'s first petal.';
       el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
-      el.stageCaption.textContent='preliminary base — one flap squashed';
+      el.stageCaption.textContent='preliminary base — corners precreased';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : step.type==='squash' ? 'Squash →' : 'Fold →';
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
@@ -716,9 +731,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
-      } else if(step.type==='squash'){
-        el.badge.textContent='Squash'; el.badge.className='badge collapse';
-        el.stageCaption.textContent='one flap folding along its own new crease';
+      } else if(step.type==='precrease-corners'){
+        el.badge.textContent='Fold'; el.badge.className='badge valley';
+        el.stageCaption.textContent='each flap folding its own corner down to the bottom point';
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
