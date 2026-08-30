@@ -179,7 +179,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 9</span>
+          <span class="step-count" id="stepCount">Step 1 of 10</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction"></p>
@@ -217,6 +217,19 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     W: new THREE.Vector3(-50,0,0),
   };
 
+  // The real sequence turns the paper over between the horizontal/vertical
+  // creases and the diagonal ones — that's what lets every crease be an
+  // easy valley fold (toward whoever's folding) instead of forcing two of
+  // the four to be the harder-to-see mountain kind. FLIPPED_FLAT is the
+  // flat sheet after that turn-over: a 180° rotation about the vertical
+  // (N-S) crease, i.e. every point's X mirrored, Y and Z unchanged. The
+  // diagonal-fold steps and the collapse both start from here, not FLAT.
+  const FLIPPED_FLAT = {};
+  Object.keys(FLAT).forEach(name=>{
+    const p = FLAT[name];
+    FLIPPED_FLAT[name] = new THREE.Vector3(-p.x, p.y, p.z);
+  });
+
   // 8 triangular faces, Ctr + consecutive outer points around the ring.
   // Non-indexed (each triangle gets its own 3 vertex slots, none shared) so
   // each panel can carry its own front/back color without fighting its
@@ -243,15 +256,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   // Cache a consistently-signed rotation axis per fold step, so every flap
   // swings toward +Y (up, over the rest of the sheet) regardless of which
-  // order the two crease points happen to be listed in. Only used for the
-  // precrease folds, whose crease endpoints are always at FLAT position
-  // (they're diameters through the center) so reading from FLAT is safe.
+  // order the two crease points happen to be listed in. Reads from the
+  // step's own reference flat state (step.ref) — FLAT for steps before the
+  // turn-over, FLIPPED_FLAT for the diagonal folds after it — since crease
+  // endpoints are diameters through the center in either state, so reading
+  // from the right one is safe.
   function axisForStep(step){
     if(step._axis) return step._axis;
-    const a = FLAT[step.crease[0]], b = FLAT[step.crease[1]];
+    const ref = step.ref || FLAT;
+    const a = ref[step.crease[0]], b = ref[step.crease[1]];
     const axisDir = new THREE.Vector3().subVectors(b, a);
-    const probe = rotateAroundAxisAtOrigin(FLAT[step.moving[0]], axisDir, 0.05);
-    if(probe.y < FLAT[step.moving[0]].y){ axisDir.negate(); }
+    const probe = rotateAroundAxisAtOrigin(ref[step.moving[0]], axisDir, 0.05);
+    if(probe.y < ref[step.moving[0]].y){ axisDir.negate(); }
     step._axis = axisDir;
     return axisDir;
   }
@@ -273,15 +289,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // ends is up: confirmed against real folded paper, the merge point (and
   // the corners riding along with it) sit ABOVE center, with center
   // dipping down as the opposite tip.
+  // The collapse now starts from FLIPPED_FLAT (the sheet is turned over by
+  // the time all 4 creases are made), which is a mirror image of FLAT —
+  // so for every point to travel the correct mirrored path to the same
+  // physical base, the target has to be mirrored too. Ctr and the shared
+  // MERGE_PT both sit exactly on the mirror plane (x=0) so they're
+  // unaffected; the 4 corners (the only points with nonzero x) each swap
+  // with the corner that was their mirror image (A<->B, C<->D).
   const MERGE_PT = new THREE.Vector3(0, 25, 0);
   const R = 50 / Math.SQRT2; // 35.355 — corner spread radius, resolved along the diagonal
   const COLLAPSED = {
     Ctr: new THREE.Vector3(0, -25, 0),
     N: MERGE_PT, E: MERGE_PT, S: MERGE_PT, W: MERGE_PT,
-    A: new THREE.Vector3(-R, 25, -R),
-    B: new THREE.Vector3(R, 25, -R),
-    C: new THREE.Vector3(R, 25, R),
-    D: new THREE.Vector3(-R, 25, R),
+    A: new THREE.Vector3(R, 25, -R),
+    B: new THREE.Vector3(-R, 25, -R),
+    C: new THREE.Vector3(-R, 25, R),
+    D: new THREE.Vector3(R, 25, R),
   };
 
   // ---- Steps ----
@@ -290,9 +313,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['N','S'], moving:['E','B','C'], instruction:'Fold the right side to the left side, creating a vertical center crease.' },
     { type:'unfold', instruction:'Unfold.' },
-    { type:'fold', crease:['A','C'], moving:['B','N','E'], instruction:'Fold the top-right corner to the bottom-left corner, creating a diagonal crease.' },
+    { type:'flip', instruction:'Turn the paper over — this lets both diagonal creases fold the same easy way as the last two.' },
+    { type:'fold', crease:['A','C'], moving:['B','N','E'], ref:FLIPPED_FLAT, instruction:'Fold the top-left corner to the bottom-right corner, creating a diagonal crease.' },
     { type:'unfold', instruction:'Unfold.' },
-    { type:'fold', crease:['B','D'], moving:['A','N','W'], instruction:'Fold the top-left corner to the bottom-right corner, creating the other diagonal crease.' },
+    { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
   ];
@@ -503,38 +527,54 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function animateStep(step, reverse, onDone){
     const isCollapse = step.type==='collapse';
+    const isFlip = step.type==='flip';
     const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
     const start = performance.now();
-    const axisDir = isCollapse ? null : axisForStep(step);
+    const axisDir = (isCollapse || isFlip) ? null : axisForStep(step);
 
     function computeFrame(p){
       if(isCollapse){
-        // See the waterbomb base for why this stops just short of p=1
-        // instead of landing on it exactly: at the exact endpoint every
-        // panel sits exactly perpendicular to its own flat orientation, a
+        // See the waterbomb base for why this overshoots slightly instead
+        // of landing exactly on p=1: at the exact endpoint every panel
+        // sits exactly perpendicular to its own flat orientation, a
         // genuine tie confirmed (against real folded paper) to resolve
         // toward the flipped side (uBack, the customizable color) —
         // whichever side starts face up (uFront) ends up tucked inside,
-        // not showing on the outside. (Which direction of approach reaches
-        // "flipped" depends on the target pose's own orientation — here,
-        // stopping short is what does it.)
-        const pc = Math.min(p, 0.98);
+        // not showing on the outside. Which direction of approach reaches
+        // "flipped" depends on the parity of both the target pose's
+        // orientation AND the starting flat state (FLIPPED_FLAT here,
+        // since the turn-over step leaves the sheet flipped going into the
+        // collapse) — verified by rendering, not assumed.
+        const pc = p * 1.02;
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
-          out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
+          out[name] = new THREE.Vector3().lerpVectors(FLIPPED_FLAT[name], COLLAPSED[name], pc);
         });
         return out;
       }
+      if(isFlip){
+        // A rigid 180° turn of the whole sheet about the vertical (N-S)
+        // crease — every point moves together, unlike a normal fold where
+        // only half the sheet swings.
+        const angleRad = p * Math.PI;
+        const axis = new THREE.Vector3(0, 0, 1);
+        const out = {};
+        ['Ctr', ...OUTER].forEach(name=>{
+          out[name] = rotateAroundAxisAtOrigin(FLAT[name], axis, angleRad);
+        });
+        return out;
+      }
+      const ref = step.ref || FLAT;
       const angleRad = p * Math.PI;
       // See the waterbomb base for why the lift is needed: a folded flap
       // ends up exactly coplanar with the static half underneath it, and
       // without help the GPU's depth test resolves that tie arbitrarily.
       const lift = (angleRad / Math.PI) * 0.3;
-      const out = { Ctr: FLAT.Ctr.clone() };
+      const out = { Ctr: ref.Ctr.clone() };
       OUTER.forEach(name=>{
         out[name] = step.moving.includes(name)
-          ? rotateAroundAxisAtOrigin(FLAT[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
-          : FLAT[name].clone();
+          ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
+          : ref[name].clone();
       });
       return out;
     }
@@ -572,7 +612,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : (step.type==='collapse' ? 'Collapse →' : 'Fold →');
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
@@ -580,6 +620,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
+      } else if(step.type==='flip'){
+        el.badge.textContent='Flip'; el.badge.className='badge done';
+        el.stageCaption.textContent='rigid 180° turn about the vertical crease';
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
