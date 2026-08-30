@@ -88,6 +88,7 @@ h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem
 .stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
 .stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; cursor:grab; touch-action:none; }
 .stage-outer.grabbing{ cursor:grabbing; }
+.stage-outer:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 .stage-outer canvas{ display:block; width:100%; height:100%; }
 /* Placed after the base .stage-outer rule above so this wins the cascade
    (equal specificity — source order decides) whenever the media query
@@ -156,7 +157,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     <span class="site-title">Fold Along</span>
     <nav class="site-nav">
       <a href="index.html">Waterbomb base</a>
-      <a href="crane.html" class="current">Crane</a>
+      <a href="crane.html" class="current" aria-current="page">Crane</a>
     </nav>
   </div>
 </div>
@@ -169,20 +170,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   </header>
   <p class="progress-note">In progress: this covers the crane's first stage, the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped. The rest of the crane (narrowing the legs, shaping the head and tail) needs fold moves this engine doesn't support yet.</p>
 
-  <section>
+  <main>
     <div class="board">
       <div class="stage-card">
-        <div class="stage-outer" id="stage">
+        <div class="stage-outer" id="stage" tabindex="0" role="application" aria-label="3D model of the crane preliminary base fold, draggable to rotate — use arrow keys when focused to rotate.">
           <div class="drag-hint" id="dragHint" aria-hidden="true">↻ Drag to rotate</div>
         </div>
         <p class="stage-caption" id="stageCaption">square sheet, flat</p>
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 10</span>
+          <span class="step-count" id="stepCount">Step 1 of 11</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
-        <p class="instruction" id="instruction"></p>
+        <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
         <div class="controls">
           <button id="foldBtn" class="primary">Fold →</button>
           <button id="playBtn">▶ Play all</button>
@@ -192,7 +193,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         <div class="swatches" id="swatches"></div>
       </div>
     </div>
-  </section>
+  </main>
 </div>
 
 <script>
@@ -289,22 +290,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // ends is up: confirmed against real folded paper, the merge point (and
   // the corners riding along with it) sit ABOVE center, with center
   // dipping down as the opposite tip.
-  // The collapse now starts from FLIPPED_FLAT (the sheet is turned over by
-  // the time all 4 creases are made), which is a mirror image of FLAT —
-  // so for every point to travel the correct mirrored path to the same
-  // physical base, the target has to be mirrored too. Ctr and the shared
-  // MERGE_PT both sit exactly on the mirror plane (x=0) so they're
-  // unaffected; the 4 corners (the only points with nonzero x) each swap
-  // with the corner that was their mirror image (A<->B, C<->D).
+  // The collapse itself starts from plain FLAT: real instructions turn the
+  // paper over a SECOND time after the diagonal creases (see the STEPS
+  // array below) to put it back in its starting orientation before the
+  // collapse — that's the orientation the "corners up" motion above
+  // assumes, so no mirroring is needed here despite the turn-overs
+  // in between.
   const MERGE_PT = new THREE.Vector3(0, 25, 0);
   const R = 50 / Math.SQRT2; // 35.355 — corner spread radius, resolved along the diagonal
   const COLLAPSED = {
     Ctr: new THREE.Vector3(0, -25, 0),
     N: MERGE_PT, E: MERGE_PT, S: MERGE_PT, W: MERGE_PT,
-    A: new THREE.Vector3(R, 25, -R),
-    B: new THREE.Vector3(-R, 25, -R),
-    C: new THREE.Vector3(-R, 25, R),
-    D: new THREE.Vector3(R, 25, R),
+    A: new THREE.Vector3(-R, 25, -R),
+    B: new THREE.Vector3(R, 25, -R),
+    C: new THREE.Vector3(R, 25, R),
+    D: new THREE.Vector3(-R, 25, R),
   };
 
   // ---- Steps ----
@@ -313,11 +313,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['N','S'], moving:['E','B','C'], instruction:'Fold the right side to the left side, creating a vertical center crease.' },
     { type:'unfold', instruction:'Unfold.' },
-    { type:'flip', instruction:'Turn the paper over — this lets both diagonal creases fold the same easy way as the last two.' },
+    { type:'flip', from:FLAT, instruction:'Turn the paper over — this lets both diagonal creases fold the same easy way as the last two.' },
     { type:'fold', crease:['A','C'], moving:['B','N','E'], ref:FLIPPED_FLAT, instruction:'Fold the top-left corner to the bottom-right corner, creating a diagonal crease.' },
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
+    { type:'flip', from:FLIPPED_FLAT, instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
   ];
 
@@ -465,8 +466,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   stageEl.addEventListener('pointercancel', endDrag);
   stageEl.addEventListener('pointerleave', endDrag);
 
+  // Keyboard equivalent of the drag-to-rotate gesture above: arrow keys
+  // rotate the model in the same two axes, by a fixed increment per press.
+  // Treated exactly like a real drag once used (userRotating=true, hide the
+  // drag hint) so keyboard users get the same "you're driving now" handoff
+  // from the ambient sway.
+  const KEY_ROTATE_STEP = 0.12;
+  stageEl.addEventListener('keydown', (e)=>{
+    let dy = 0, dx = 0;
+    if(e.key==='ArrowLeft') dy = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowRight') dy = KEY_ROTATE_STEP;
+    else if(e.key==='ArrowUp') dx = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowDown') dx = KEY_ROTATE_STEP;
+    else return;
+    e.preventDefault();
+    if(!userRotating){ userRotating = true; hideDragHint(); }
+    group.rotation.y += dy;
+    group.rotation.x += dx;
+  });
+
   function renderLoop(){
-    if(!userRotating){
+    if(!userRotating && !reducedMotion){
       autoRotate += 0.003;
       group.rotation.y = Math.sin(autoRotate) * 0.35;
     }
@@ -534,33 +554,35 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
-        // See the waterbomb base for why this overshoots slightly instead
-        // of landing exactly on p=1: at the exact endpoint every panel
-        // sits exactly perpendicular to its own flat orientation, a
+        // See the waterbomb base for why this stops just short of p=1
+        // instead of landing exactly on it: at the exact endpoint every
+        // panel sits exactly perpendicular to its own flat orientation, a
         // genuine tie confirmed (against real folded paper) to resolve
         // toward the flipped side (uBack, the customizable color) —
         // whichever side starts face up (uFront) ends up tucked inside,
-        // not showing on the outside. Which direction of approach reaches
-        // "flipped" depends on the parity of both the target pose's
-        // orientation AND the starting flat state (FLIPPED_FLAT here,
-        // since the turn-over step leaves the sheet flipped going into the
-        // collapse) — verified by rendering, not assumed.
-        const pc = p * 1.02;
+        // not showing on the outside. This is for plain FLAT — the sheet
+        // is back the right way up by the time the collapse starts, per
+        // the second turn-over in the STEPS array.
+        const pc = Math.min(p, 0.98);
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
-          out[name] = new THREE.Vector3().lerpVectors(FLIPPED_FLAT[name], COLLAPSED[name], pc);
+          out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
         });
         return out;
       }
       if(isFlip){
         // A rigid 180° turn of the whole sheet about the vertical (N-S)
         // crease — every point moves together, unlike a normal fold where
-        // only half the sheet swings.
+        // only half the sheet swings. step.from is which flat state this
+        // particular turn-over starts from (FLAT for the first one,
+        // FLIPPED_FLAT for the second, which turns the sheet back to plain
+        // FLAT by p=1).
         const angleRad = p * Math.PI;
         const axis = new THREE.Vector3(0, 0, 1);
+        const from = step.from || FLAT;
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
-          out[name] = rotateAroundAxisAtOrigin(FLAT[name], axis, angleRad);
+          out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
         });
         return out;
       }
