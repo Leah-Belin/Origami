@@ -48,16 +48,15 @@ body{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sa
 .site-tagline{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; color:var(--ink-muted); }
 
 .wrap{ max-width:1080px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
-header{ margin-bottom:2rem; max-width:640px; }
-.eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--accent-mountain); margin:0 0 .6rem; }
-h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0 0 .65rem; text-wrap:balance; }
-header p{ margin:0; color:var(--ink-muted); font-size:1rem; line-height:1.55; max-width:60ch; }
+header{ margin-bottom:2rem; }
+h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0; text-wrap:balance; }
 
 .board{ display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:1.75rem; align-items:start; }
 @media (max-width: 780px){ .board{ grid-template-columns: 1fr; } }
 
 .stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
-.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; }
+.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; cursor:grab; touch-action:none; }
+.stage-outer.grabbing{ cursor:grabbing; }
 .stage-outer canvas{ display:block; width:100%; height:100%; }
 .stage-caption{ margin-top:.85rem; font-family:'IBM Plex Mono', monospace; font-size:.74rem; color:var(--ink-muted); text-align:center; }
 
@@ -80,26 +79,9 @@ button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 button.primary{ background:var(--accent-mountain); border-color:var(--accent-mountain); color:#fff; }
 button.primary:hover:not(:disabled){ background:#255e66; }
 
-.dots{ display:flex; gap:.4rem; margin-bottom:1.4rem; }
+.dots{ display:flex; gap:.4rem; }
 .dot{ width:.5rem; height:.5rem; border-radius:99px; background:var(--border); }
 .dot.filled{ background:var(--accent-mountain); }
-
-.divider{ border:none; border-top:1px solid var(--border); margin:0 0 1.2rem; }
-
-.explainer h3{ font-family:'IBM Plex Mono', monospace; font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 .6rem; font-weight:400; }
-.explainer p{ font-size:.92rem; line-height:1.6; color:var(--ink-muted); margin:0 0 1rem; }
-.explainer p strong{ color:var(--ink); font-weight:600; }
-pre.code{ background:var(--surface-2); border:1px solid var(--border); border-radius:9px; padding:.85rem 1rem; font-family:'IBM Plex Mono', monospace; font-size:.76rem; line-height:1.55; overflow-x:auto; color:var(--ink); margin:0; white-space:pre; }
-.code-num{ color:var(--accent-mountain); }
-.code-str{ color:var(--accent-valley); }
-
-.roadmap{ margin-top:2.5rem; padding-top:1.75rem; border-top:1px solid var(--border); }
-.roadmap h2{ font-family:'IBM Plex Mono', monospace; font-size:.74rem; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted); margin:0 0 1rem; font-weight:400; }
-.roadmap ul{ list-style:none; margin:0; padding:0; display:grid; gap:.6rem; }
-.roadmap li{ font-size:.92rem; line-height:1.55; color:var(--ink-muted); padding-left:1.4rem; position:relative; }
-.roadmap li::before{ content:'○'; position:absolute; left:0; color:var(--border); }
-.roadmap li.done::before{ content:'●'; color:var(--accent-mountain); }
-.roadmap li strong{ color:var(--ink); font-weight:600; }
 </style>
 </head>
 <body>
@@ -115,13 +97,10 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
 
 <div class="wrap">
   <header>
-    <p class="eyebrow">Fold Engine — 3D</p>
-    <h1>Waterbomb base, in real 3D</h1>
-    <p>Precrease folds still rotate a flap around a hinge — same idea as before. But the final collapse needs all 4 corners to converge on <strong>one point</strong> while the center stays put, which means the panels have to leave the flat plane. That's genuine 3D, rendered with Three.js instead of flat CSS transforms.</p>
+    <h1>Waterbomb base</h1>
   </header>
 
   <section>
-    <p class="chapter-note" style="color:var(--ink-muted); font-size:.94rem; line-height:1.55; max-width:64ch; margin:0 0 1.4rem;">Steps 1–8 are the precrease: fold, then unfold, four times. Step 9 is the collapse — the 4 creases move together in <strong>one coordinated motion</strong>, not a chain of separate hinge folds, landing on the one 3D pose that keeps every panel's original side lengths intact. Front/back color compares each panel's current normal to its own flat-state normal — a fixed reference, not the camera — so it can't drift out of sync with the shape or change just because you rotated the view.</p>
     <div class="board">
       <div class="stage-card">
         <div class="stage-outer" id="stage"></div>
@@ -138,23 +117,7 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
           <button id="playBtn">▶ Play all</button>
         </div>
         <div class="dots" id="dots"></div>
-        <hr class="divider">
-        <div class="explainer">
-          <h3>What's driving it</h3>
-          <p id="explainerText"></p>
-          <pre class="code" id="codePanel"></pre>
-        </div>
       </div>
-    </div>
-
-    <div class="roadmap">
-      <h2>Roadmap</h2>
-      <ul>
-        <li class="done"><strong>Waterbomb base</strong> — precrease + collapse, verified against real folded paper.</li>
-        <li>Traditional crane — needs squash, petal, and reverse-fold primitives the engine doesn't have yet.</li>
-        <li>A generalized fold-sequence format so new models are data, not new code.</li>
-        <li>Upload your own folding instructions and have them rendered automatically.</li>
-      </ul>
     </div>
   </section>
 </div>
@@ -362,10 +325,36 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
   new ResizeObserver(resize).observe(stageEl);
   resize();
 
-  let autoRotate = 0;
+  // Gentle auto-rotate until the user first drags, then it's fully in
+  // their hands — dragging (mouse or touch, via Pointer Events so both
+  // are handled the same way) spins the model around Y and tilts it a
+  // little around X, clamped so it can't flip upside down.
+  let autoRotate = 0, userRotating = false, dragging = false, lastX = 0, lastY = 0;
+
+  stageEl.addEventListener('pointerdown', (e)=>{
+    dragging = true;
+    userRotating = true;
+    lastX = e.clientX; lastY = e.clientY;
+    stageEl.setPointerCapture(e.pointerId);
+    stageEl.classList.add('grabbing');
+  });
+  stageEl.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    group.rotation.y += dx * 0.008;
+    group.rotation.x = Math.max(-0.6, Math.min(0.7, group.rotation.x + dy * 0.008));
+  });
+  function endDrag(){ dragging = false; stageEl.classList.remove('grabbing'); }
+  stageEl.addEventListener('pointerup', endDrag);
+  stageEl.addEventListener('pointercancel', endDrag);
+  stageEl.addEventListener('pointerleave', endDrag);
+
   function renderLoop(){
-    autoRotate += 0.003;
-    group.rotation.y = Math.sin(autoRotate) * 0.35;
+    if(!userRotating){
+      autoRotate += 0.003;
+      group.rotation.y = Math.sin(autoRotate) * 0.35;
+    }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
@@ -381,12 +370,8 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
     foldBtn: document.getElementById('foldBtn'),
     playBtn: document.getElementById('playBtn'),
     dots: document.getElementById('dots'),
-    explainerText: document.getElementById('explainerText'),
-    codePanel: document.getElementById('codePanel'),
     stageCaption: document.getElementById('stageCaption'),
   };
-
-  el.explainerText.innerHTML = 'Precrease folds are ordinary single-hinge rotations. The collapse is different: it\'s one coordinated move, not a chain of hinges, so it\'s animated as a straight interpolation between the flat pose and the one rigid 3D pose that keeps every panel\'s original side lengths intact. Front/back color compares each panel\'s current normal to its own original flat normal — a fixed reference, not the camera — so a panel\'s color is a property of how it\'s actually folded, not of which way you\'re looking at it.';
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 
@@ -452,7 +437,6 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
       el.instruction.textContent='All 4 corners meet at one point below center, with center popped up as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
       el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
       el.stageCaption.textContent='waterbomb base — collapsed';
-      el.codePanel.innerHTML = '<span class="code-str">// one rigid target pose, solved from each panel\'s\n// fixed side lengths — not a chain of hinge folds.</span>';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
@@ -462,21 +446,12 @@ pre.code{ background:var(--surface-2); border:1px solid var(--border); border-ra
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
         el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
-        el.codePanel.innerHTML = `{
-  <span class="code-str">// Ctr up, all 4 corners to one point below,</span>
-  <span class="code-str">// N/E/S/W pulled in — solved from rigid side lengths</span>
-}`;
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
-        el.codePanel.innerHTML = '<span class="code-str">// same hinge rotation, animated back to 0°</span>';
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
-        el.codePanel.innerHTML = `{
-  crease: [<span class="code-str">'${step.crease[0]}'</span>, <span class="code-str">'${step.crease[1]}'</span>],
-  moving: [${step.moving.map(m=>`<span class="code-str">'${m}'</span>`).join(', ')}]
-}`;
       }
     }
     el.dots.innerHTML = STEPS.map((_,i)=>`<span class="dot${i<stepIndex?' filled':''}"></span>`).join('');
