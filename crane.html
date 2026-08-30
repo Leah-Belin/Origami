@@ -211,18 +211,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // the waterbomb base (every panel keeps its 3 original side lengths —
   // center-to-corner is 70.71, center-to-edge-midpoint is 50, each rim
   // edge is 50) with the roles of "corner" and "edge-midpoint" swapped
-  // gives: Ctr rises by 25, the merged edge-midpoint point drops by 25,
-  // and the 4 corners spread to radius 50 at height -25, along their
-  // original diagonal directions.
-  const MERGE_PT = new THREE.Vector3(0, -25, 0);
+  // gives: Ctr and the merged edge-midpoint point sit 50 apart on the
+  // y-axis, and the 4 corners spread to radius 50 at the SAME height as
+  // the merge point, along their original diagonal directions — but like
+  // the waterbomb base, the constraint alone doesn't say which of the two
+  // ends is up: confirmed against real folded paper, the merge point (and
+  // the corners riding along with it) sit ABOVE center, with center
+  // dipping down as the opposite tip.
+  const MERGE_PT = new THREE.Vector3(0, 25, 0);
   const R = 50 / Math.SQRT2; // 35.355 — corner spread radius, resolved along the diagonal
   const COLLAPSED = {
-    Ctr: new THREE.Vector3(0, 25, 0),
+    Ctr: new THREE.Vector3(0, -25, 0),
     N: MERGE_PT, E: MERGE_PT, S: MERGE_PT, W: MERGE_PT,
-    A: new THREE.Vector3(-R, -25, -R),
-    B: new THREE.Vector3(R, -25, -R),
-    C: new THREE.Vector3(R, -25, R),
-    D: new THREE.Vector3(-R, -25, R),
+    A: new THREE.Vector3(-R, 25, -R),
+    B: new THREE.Vector3(R, 25, -R),
+    C: new THREE.Vector3(R, 25, R),
+    D: new THREE.Vector3(-R, 25, R),
   };
 
   // ---- Steps ----
@@ -235,7 +239,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['B','D'], moving:['A','N','W'], instruction:'Fold the top-left corner to the bottom-right corner, creating the other diagonal crease.' },
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
-    { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point below center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
+    { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
   ];
 
   // ---- Three.js scene ----
@@ -422,14 +426,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
-        // See the waterbomb base for why this overshoots slightly instead
-        // of landing exactly on p=1: at the exact endpoint every panel
-        // sits exactly perpendicular to its own flat orientation, a
+        // See the waterbomb base for why this stops just short of p=1
+        // instead of landing on it exactly: at the exact endpoint every
+        // panel sits exactly perpendicular to its own flat orientation, a
         // genuine tie confirmed (against real folded paper) to resolve
         // toward the flipped side (uBack, the customizable color) —
         // whichever side starts face up (uFront) ends up tucked inside,
-        // not showing on the outside.
-        const pc = p * 1.02;
+        // not showing on the outside. (Which direction of approach reaches
+        // "flipped" depends on the target pose's own orientation — here,
+        // stopping short is what does it.)
+        const pc = Math.min(p, 0.98);
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
           out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
@@ -468,7 +474,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The 4 edge midpoints meet at one point below center, with center popped up as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base.';
+      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base.';
       el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
       el.stageCaption.textContent='preliminary base — collapsed';
     } else {

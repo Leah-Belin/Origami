@@ -209,15 +209,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // that has to hold throughout: every panel is a rigid triangle, so the
   // three original side lengths (center-to-corner, center-to-edge-midpoint,
   // and each rim edge) must still measure the same once collapsed.
-  // Solving that (center pops up by h, the 4 corners converge to one point
-  // h below center, and by the square's symmetry N/E/S/W stay at a shared
-  // height and radius) gives a clean, fully consistent answer:
-  // h = radius = 25*sqrt(2), with N/E/S/W staying in the original z=0
-  // plane, just pulled in from radius 50 to 25*sqrt(2).
+  // Solving that gives center and the 4-corners meeting point sitting a
+  // distance h = 25*sqrt(2) apart on the y-axis, with N/E/S/W staying in
+  // the original z=0 plane at the same height, just pulled in from radius
+  // 50 to 25*sqrt(2) — but the constraint alone doesn't say which of the
+  // two ends the corners land on: the solve is symmetric under swapping
+  // "center up / corners down" for "center down / corners up". Confirmed
+  // against real folded paper: the corners rise to meet ABOVE center,
+  // while center dips down as the opposite tip.
   const K = 25 * Math.SQRT2;
-  const CORNER_PT = new THREE.Vector3(0, -K, 0);
+  const CORNER_PT = new THREE.Vector3(0, K, 0);
   const COLLAPSED = {
-    Ctr: new THREE.Vector3(0, K, 0),
+    Ctr: new THREE.Vector3(0, -K, 0),
     A: CORNER_PT, B: CORNER_PT, C: CORNER_PT, D: CORNER_PT,
     N: new THREE.Vector3(0, 0, -K),
     E: new THREE.Vector3(K, 0, 0),
@@ -235,7 +238,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold.' },
     { type:'fold', crease:['B','D'], moving:['A','N','W'], instruction:'Fold the top-left corner to the bottom-right corner, creating the other diagonal crease.' },
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
-    { type:'collapse', instruction:'Now fold on the vertical and horizontal creases while the diagonals push through the other way — the whole sheet collapses at once. All 4 corners meet at one point below center; center pops up as the opposite tip; the 4 edge midpoints stay apart, forming the base\'s rim.' },
+    { type:'collapse', instruction:'Now fold on the vertical and horizontal creases while the diagonals push through the other way — the whole sheet collapses at once. All 4 corners meet at one point above center; center dips down as the opposite tip; the 4 edge midpoints stay apart, forming the base\'s rim.' },
   ];
 
   // ---- Three.js scene ----
@@ -442,10 +445,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         // whichever side starts face-up ends up on the INSIDE of the
         // finished base, not the outside — so the tie resolves toward the
         // flipped side (uBack, the customizable color), not the starting
-        // side (uFront, fixed white). Overshooting the target pose by a
-        // couple percent (imperceptible in shape) pushes every panel
-        // decisively past the tie in that direction.
-        const pc = p * 1.02;
+        // side (uFront, fixed white). Which direction of approach resolves
+        // toward "flipped" flips too whenever the target pose's own
+        // orientation flips (as it did here, to put the corners above
+        // center instead of below): with this orientation, stopping just
+        // short of the exact endpoint (imperceptible in shape) is what
+        // lands every panel decisively on the flipped side.
+        const pc = Math.min(p, 0.98);
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
           out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
@@ -489,7 +495,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='All 4 corners meet at one point below center, with center popped up as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
+      el.instruction.textContent='All 4 corners meet at one point above center, with center dipped down as the opposite tip, and the 4 edge midpoints spread apart forming the base\'s rim — the waterbomb base.';
       el.foldBtn.textContent='Replay'; el.foldBtn.disabled=false;
       el.stageCaption.textContent='waterbomb base — collapsed';
     } else {
