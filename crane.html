@@ -417,12 +417,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
     function computeFrame(p){
       if(isCollapse){
-        // Stop just short of p=1 — see the waterbomb base for why: at the
-        // exact endpoint every panel sits exactly perpendicular to its own
-        // flat orientation, a genuine tie with no well-defined outward
-        // side. Stopping a hair short (imperceptible visually) keeps every
-        // panel decisively on the side it's been on the whole animation.
-        const pc = Math.min(p, 0.985);
+        // See the waterbomb base for why this overshoots slightly instead
+        // of landing exactly on p=1: at the exact endpoint every panel
+        // sits exactly perpendicular to its own flat orientation, a
+        // genuine tie confirmed (against real folded paper) to resolve
+        // toward the flipped side — whichever side starts face up ends up
+        // tucked inside, not showing on the outside.
+        const pc = p * 1.02;
         const out = {};
         ['Ctr', ...OUTER].forEach(name=>{
           out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
