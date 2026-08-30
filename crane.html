@@ -87,6 +87,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 .dots{ display:flex; gap:.4rem; }
 .dot{ width:.5rem; height:.5rem; border-radius:99px; background:var(--border); }
 .dot.filled{ background:var(--accent-mountain); }
+
+.swatch-label{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); margin:1.3rem 0 .7rem; }
+.swatches{ display:flex; gap:.55rem; flex-wrap:wrap; }
+.swatch{ width:28px; height:28px; padding:0; border-radius:50%; border:2px solid transparent; box-shadow:inset 0 0 0 1px rgba(0,0,0,.12); cursor:pointer; }
+.swatch:hover{ transform:scale(1.08); }
+.swatch.active{ border-color:var(--ink); }
+.swatch:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
 </style>
 </head>
 <body>
@@ -126,6 +133,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
           <button id="playBtn">▶ Play all</button>
         </div>
         <div class="dots" id="dots"></div>
+        <p class="swatch-label">Paper color</p>
+        <div class="swatches" id="swatches"></div>
       </div>
     </div>
   </section>
@@ -255,17 +264,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   // True two-sided paper: gl_FrontFacing asks, per pixel, which side of
-  // the triangle currently faces the camera, so red/white is always a
-  // property of the paper's actual orientation, not tracked fold history
-  // or camera-independent guesswork.
+  // the triangle currently faces the camera, so front/back color is
+  // always a property of the paper's actual orientation, not tracked fold
+  // history or camera-independent guesswork. Front is a uniform (not baked
+  // into the shader source) so the color swatches can change it live.
+  const colorUniforms = { uFront: { value: new THREE.Color(...RED) }, uBack: { value: new THREE.Color(...WHITE) } };
   const paperMat = new THREE.MeshStandardMaterial({
     side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
   paperMat.onBeforeCompile = (shader) => {
-    shader.fragmentShader = shader.fragmentShader.replace(
+    Object.assign(shader.uniforms, colorUniforms);
+    shader.fragmentShader = 'uniform vec3 uFront;\nuniform vec3 uBack;\n' + shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>
-      diffuseColor.rgb = gl_FrontFacing ? vec3(${RED[0]}, ${RED[1]}, ${RED[2]}) : vec3(${WHITE[0]}, ${WHITE[1]}, ${WHITE[2]});`
+      diffuseColor.rgb = gl_FrontFacing ? uFront : uBack;`
     );
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
@@ -346,6 +358,41 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     requestAnimationFrame(renderLoop);
   }
   renderLoop();
+
+  // ---- Paper color ----
+  // Front color only — the back stays a consistent off-white, matching
+  // how real single-color origami paper actually works. Remembered across
+  // visits (and shared with the other page) via localStorage; falls back
+  // silently to the default if storage isn't available.
+  const PAPER_COLORS = [
+    { name:'Red',    hex:'#C1442D' },
+    { name:'Orange', hex:'#D97A34' },
+    { name:'Yellow', hex:'#D9B23C' },
+    { name:'Green',  hex:'#4C8C6B' },
+    { name:'Blue',   hex:'#3B6FA0' },
+    { name:'Purple', hex:'#7A5A9E' },
+    { name:'Pink',   hex:'#C97B94' },
+    { name:'Black',  hex:'#2B2E33' },
+  ];
+  const swatchesEl = document.getElementById('swatches');
+  function setPaperColor(hex, save){
+    colorUniforms.uFront.value.set(hex);
+    swatchesEl.querySelectorAll('.swatch').forEach(b=>{
+      b.classList.toggle('active', b.dataset.hex.toLowerCase()===hex.toLowerCase());
+    });
+    if(save){
+      try{ localStorage.setItem('foldalong-paper-color', hex); }catch(e){}
+    }
+  }
+  swatchesEl.innerHTML = PAPER_COLORS.map(c=>
+    `<button class="swatch" style="background:${c.hex}" data-hex="${c.hex}" aria-label="${c.name}" title="${c.name}"></button>`
+  ).join('');
+  swatchesEl.querySelectorAll('.swatch').forEach(btn=>{
+    btn.addEventListener('click', ()=> setPaperColor(btn.dataset.hex, true));
+  });
+  let savedColor = null;
+  try{ savedColor = localStorage.getItem('foldalong-paper-color'); }catch(e){}
+  setPaperColor(savedColor || PAPER_COLORS[0].hex, false);
 
   // ---- Playback state ----
   let stepIndex = 0, animating = false, playing = false;
