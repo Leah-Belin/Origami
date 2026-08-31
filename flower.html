@@ -185,7 +185,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 17</span>
+          <span class="step-count" id="stepCount">Step 1 of 16</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -384,7 +384,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // the waterbomb base, the constraint alone doesn't say which of the two
   // ends is up: confirmed against real folded paper, the merge point (and
   // the corners riding along with it) sit ABOVE center, with center
-  // dipping down as the opposite tip.
+  // dipping down as the opposite tip. That's how the base naturally rests
+  // right after collapsing — COLLAPSED below is exactly that pose, kept
+  // around only as the un-rotated basis for COLLAPSED_UP (see below) and
+  // for facing checks; nothing reads from COLLAPSED directly once it's
+  // built.
   // The collapse itself starts from plain FLAT: real instructions turn the
   // paper over a SECOND time after the diagonal creases (see the STEPS
   // array below) to put it back in its starting orientation before the
@@ -445,17 +449,35 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
   withCreaseTips(COLLAPSED);
 
+  // The squash-fold precrease (every step after the collapse) is done
+  // holding the base with its closed tip up and the 4 flaps hanging
+  // below, meeting at the open merge point in the middle — confirmed
+  // against real paper, and the opposite way up from how the collapse
+  // itself naturally settles (COLLAPSED above: closed tip down). Rather
+  // than collapsing to COLLAPSED and then turning the result over as a
+  // separate step, COLLAPSED_UP bakes that same 180° turn (about this
+  // arbitrary but fixed horizontal axis, a rigid rotation, not a
+  // mirror-image reflection) directly into the collapse's own target —
+  // one continuous move that settles straight into the tip-up hold —
+  // exactly the fixed relative geometry of COLLAPSED, since a rotation
+  // doesn't change a rigid pose's actual shape, only which way it faces.
+  const COLLAPSED_UP_AXIS = new THREE.Vector3(1, 0, 0);
+  const COLLAPSED_UP = {};
+  Object.keys(COLLAPSED).forEach(name=>{
+    COLLAPSED_UP[name] = rotateAroundAxisAtOrigin(COLLAPSED[name], COLLAPSED_UP_AXIS, Math.PI);
+  });
+
   // Every step after the collapse (each corner's precrease fold, and any
   // jump/replay landing on "the collapsed base") reads from this instead
-  // of the idealized COLLAPSED values directly, for the same "stop just
-  // short of the exact endpoint" reason the collapse animation itself
-  // uses pc=min(p,0.98) below: at p=1 every point would sit exactly on
-  // its target, and a few of those targets (Ctr, at the very end of a
-  // corner's own fold) are genuine coincidences the depth test would
-  // otherwise have to break a tie on.
+  // of the idealized COLLAPSED_UP values directly, for the same "stop
+  // just short of the exact endpoint" reason the collapse animation
+  // itself uses pc=min(p,0.98) below: at p=1 every point would sit
+  // exactly on its target, and a few of those targets (Ctr, at the very
+  // end of a corner's own fold) are genuine coincidences the depth test
+  // would otherwise have to break a tie on.
   const SETTLED = {};
   ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
+    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], 0.98);
   });
   // The lerp above interpolates each secondary layer's neighbor-copy
   // independently from FLAT toward COLLAPSED (where it's exactly on the
@@ -488,21 +510,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     SETTLED[X+'_'+secondary+'_r'] = SETTLED.Ctr.clone();
   });
 
-  // The squash-fold precrease is done holding the base with its closed
-  // tip (Ctr — every panel funnels down to this single point) pointing
-  // up, and the open end (the merge point, where 4 formerly-separate
-  // edge-midpoints now sit, surrounded by the spread corners) hanging
-  // down where each flap is worked in turn — confirmed against real
-  // paper. SETTLED comes out of the collapse with the closed tip down
-  // instead (that orientation was itself confirmed against paper for the
-  // collapse step): this axis (X — an arbitrary but fixed choice) is what
-  // flipGroup (see above) rotates 180° around to swap up/down as a rigid
-  // rotation, not a mirror-image reflection. Every precrease-corner fold
-  // still computes its own geometry directly from SETTLED, unrotated —
-  // flipGroup is the only thing that makes the result actually appear
-  // tip-up.
-  const FLIP_UP_AXIS = new THREE.Vector3(1, 0, 0);
-
   // ---- Steps ----
   const STEPS = [
     { type:'fold', crease:['W','E'], moving:['N','A','B'], label:'Fold top down', instruction:'Fold the top down to the bottom, creating a horizontal center crease.' },
@@ -515,8 +522,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, label:'Fold top-right', instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
-    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
+    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base, closed tip up and the 4 corners spread below it as an open rim, meeting at one point in the middle — that\'s the hold for working each flap\'s corner next. This is the preliminary base.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
     { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner.' },
@@ -532,10 +538,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const CORNER_FOLD_STEP_INDEX = {};
   STEPS.forEach((s,i)=>{ if(s.type==='precrease-corner') CORNER_FOLD_STEP_INDEX[s.corner] = i; });
 
-  // Index of the one flip-collapsed step — used to decide, at any given
-  // moment, whether flipGroup (see above) should sit unrotated (paper
-  // not yet turned over) or at its full 180° (turned over).
-  const FLIP_STEP_INDEX = STEPS.findIndex(s=>s.type==='flip-collapsed');
+  // Index of the one collapse step — used by aForce/setForceColor below
+  // to decide, at any given moment, whether panels should be pinned to
+  // the confirmed-correct color (once collapsed, the base is complex
+  // enough in 3D that gl_FrontFacing alone isn't reliable from every
+  // viewing angle) or left fully dynamic (every step before the collapse,
+  // where the sheet is still flat/simply-folded enough that it is).
+  const COLLAPSE_STEP_INDEX = STEPS.findIndex(s=>s.type==='collapse');
 
   // Declared here (rather than down with the rest of the playback state)
   // so it's already initialized by the time the initial applyFrame(FLAT)
@@ -564,23 +573,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   const group = new THREE.Group();
   scene.add(group);
-  // The flip-collapsed step's 180° turn (see FLIP_UP_AXIS above) lives
-  // here, as a real rotation of this wrapping group, rather than baked
-  // into the paper's own vertex positions — unlike every other step's
-  // animation, which computes new point positions each frame. That's
-  // deliberate: a fixed camera watching a *vertex* rotation genuinely
-  // does end up looking at whatever was previously the far side (a real
-  // consequence of physically turning the base over without moving your
-  // eye), which read as "weird coloring" once confirmed against paper.
-  // A *group* rotation doesn't have that problem — it composes with the
-  // user's own drag/auto-sway rotation on the outer `group` exactly the
-  // way those already do, so gl_FrontFacing keeps resolving correctly
-  // from any angle, not just the one this app happens to render at.
-  // Every precrease-corner fold's own geometry is computed in the
-  // pre-flip (SETTLED) frame regardless — flipGroup's rotation is the
-  // only thing that makes the whole base visibly sit tip-up afterward.
-  const flipGroup = new THREE.Group();
-  group.add(flipGroup);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.7));
   const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
@@ -597,18 +589,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // gl_FrontFacing alone answers "which side of this triangle faces the
   // camera *right now*" — exactly what a folding flap needs, since which
   // side it shows genuinely depends on how far it's swung. But once the
-  // base is collapsed and flipped, a handful of its panels sit at angles,
-  // relative to that 180° turn, where a realistic amount of ambient
-  // sway or drag brings their normal edge-on to the camera and past —
-  // showing their (correct, uFront/white) reverse for a real reason, not
-  // a bug, but one this app already settled for every *other* corner via
-  // PRIMARY_NEIGHBOR (choosing the layer that's confirmed to face out,
-  // once, rather than re-deriving it live per frame). aForce carries
-  // that same "already confirmed, no need to re-check" decision forward
-  // for a corner's static (not currently mid-fold) geometry once it's
-  // past the flip: 1 pins a vertex's triangle to uBack outright, 0 falls
-  // back to gl_FrontFacing as normal — still needed for a flap actively
-  // swinging through its own fold, which legitimately shows both sides.
+  // base is collapsed, a handful of its panels sit at angles where a
+  // realistic amount of ambient sway or drag brings their normal edge-on
+  // to the camera and past — showing their (correct, uFront/white)
+  // reverse for a real reason, not a bug, but one this app already
+  // settled for every *other* corner via PRIMARY_NEIGHBOR (choosing the
+  // layer that's confirmed to face out, once, rather than re-deriving it
+  // live per frame). aForce carries that same "already confirmed, no
+  // need to re-check" decision forward for a corner's static (not
+  // currently mid-fold) geometry once collapsed: 1 pins a vertex's
+  // triangle to uBack outright, 0 falls back to gl_FrontFacing as normal
+  // — still needed for a flap actively swinging through its own fold,
+  // which legitimately shows both sides.
   const aForce = new Float32Array(vertCount);
   geometry.setAttribute('aForce', new THREE.BufferAttribute(aForce, 1));
 
@@ -640,14 +632,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     );
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
-  flipGroup.add(paperMesh);
+  group.add(paperMesh);
 
   const linePositions = new Float32Array(LINE_PAIRS.length * 3);
   const lineGeo = new THREE.BufferGeometry();
   lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
   const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
   const lines = new THREE.LineSegments(lineGeo, lineMat);
-  flipGroup.add(lines);
+  group.add(lines);
 
   function applyFrame(frame){
     let vi = 0;
@@ -875,16 +867,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const pc = Math.min(p, 0.98);
       const out = {};
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
+        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], pc);
       });
       return withCreaseTips(out);
-    }
-    if(step.type==='flip-collapsed'){
-      // The turn itself is a flipGroup rotation (see above), driven
-      // directly off this step's progress by the animation loop below,
-      // not a change in point positions — every point stays at SETTLED
-      // throughout.
-      return SETTLED;
     }
     if(step.type==='precrease-corner'){
       // This flap's corner folds down onto its neighbor's ray from Ctr —
@@ -892,8 +877,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // above), which runs through Ctr and that layer's own crease-edge
       // point (X+'_'+primary+'_r'). That point sits ON the axis, so it
       // (and everything else in SETTLED) stays fixed; only the corner
-      // itself moves. Computed directly off SETTLED (not a rotated copy
-      // of it) — flipGroup is what makes the result appear tip-up.
+      // itself moves. Computed directly off SETTLED, which is already
+      // tip-up (see COLLAPSED_UP above) — no separate flip needed.
       // Corners folded by an earlier step (see priorFoldedCorners above)
       // stay folded here too, rather than resetting to SETTLED along
       // with every corner this step doesn't itself concern.
@@ -965,32 +950,25 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const idx = STEPS.indexOf(step);
     const activeCorners = step.type==='precrease-corner' ? [step.corner]
       : step.type==='unfold-all-corners' ? ['A','B','C','D'] : null;
-    // flipGroup stays unrotated before the flip and fully turned after it
-    // for every step's whole run, except flip-collapsed itself, which
-    // rotates it mid-animation in lockstep with its own progress (tracked
-    // per-tick below). Color follows the same shape (see aForce above):
-    // pinned once pastFlip, except a step's own activeCorners get real
-    // two-sided color for the fold/unfold it's actively swinging through
-    // — settled is false only while that swing is still in progress, so
-    // the very last rendered frame of any step (including a fresh corner
-    // landing back at rest) always resolves to the pinned color, not
-    // whatever gl_FrontFacing happens to say at that specific angle.
-    function updateFlipAndColor(p, settled){
-      if(idx === FLIP_STEP_INDEX){
-        flipGroup.rotation.x = p * Math.PI;
-        setForceColor(settled, null);
-      } else {
-        flipGroup.rotation.x = idx > FLIP_STEP_INDEX ? Math.PI : 0;
-        setForceColor(idx > FLIP_STEP_INDEX, settled ? null : activeCorners);
-      }
+    // Color follows aForce above: pinned once past the collapse, except
+    // a step's own activeCorners get real two-sided color for the
+    // fold/unfold it's actively swinging through — settled is false only
+    // while that swing is still in progress, so the very last rendered
+    // frame of any step (including the collapse settling into its
+    // already-tip-up target, or a fresh corner landing back at rest)
+    // always resolves to the pinned color, not whatever gl_FrontFacing
+    // happens to say at that specific angle.
+    function updateColor(settled){
+      if(idx === COLLAPSE_STEP_INDEX) setForceColor(settled, null);
+      else setForceColor(idx > COLLAPSE_STEP_INDEX, settled ? null : activeCorners);
     }
-    updateFlipAndColor(reverse ? 1 : 0, false);
+    updateColor(false);
 
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
-      updateFlipAndColor(p, t>=1);
+      updateColor(t>=1);
       applyFrame(frameForStep(step, p));
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
@@ -1033,11 +1011,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = (step.type==='unfold'||step.type==='unfold-all-corners') ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : (step.type==='flip'||step.type==='flip-collapsed') ? 'Flip →' : 'Fold →';
+      el.foldBtn.textContent = (step.type==='unfold'||step.type==='unfold-all-corners') ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
-        el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
+        el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose — closed tip up, ready to work the flaps';
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
@@ -1047,9 +1025,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
-      } else if(step.type==='flip-collapsed'){
-        el.badge.textContent='Flip'; el.badge.className='badge done';
-        el.stageCaption.textContent='rigid 180° turn of the whole base, closed tip to open tip';
       } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the open merge point`;
@@ -1079,7 +1054,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function reset(){
     stepIndex = 0; animating = false;
-    flipGroup.rotation.x = 0;
     setForceColor(false, null);
     applyFrame(FLAT);
     updatePanel();
@@ -1094,8 +1068,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     n = Math.max(0, Math.min(n, STEPS.length));
     playing = false; el.playBtn.textContent = '▶ Play all';
     stepIndex = n;
-    flipGroup.rotation.x = n > FLIP_STEP_INDEX ? Math.PI : 0;
-    setForceColor(n > FLIP_STEP_INDEX, null);
+    setForceColor(n > COLLAPSE_STEP_INDEX, null);
     applyFrame(stateBeforeStep(n));
     updatePanel();
   }
