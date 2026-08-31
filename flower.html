@@ -185,7 +185,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 20</span>
+          <span class="step-count" id="stepCount">Step 1 of 17</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -518,13 +518,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
     { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
-    { type:'unfold', label:'Unfold A', instruction:'Unfold. That\'s A\'s crease.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
-    { type:'unfold', label:'Unfold B', instruction:'Unfold. B\'s crease.' },
     { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner.' },
-    { type:'unfold', label:'Unfold C', instruction:'Unfold. C\'s crease.' },
-    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — the last one.' },
-    { type:'unfold', label:'Unfold D', instruction:'Unfold. Every flap now carries its own crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
+    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — the last one. All 4 are folded down now.' },
+    { type:'unfold-all-corners', label:'Unfold all', instruction:'Unfold all 4 at once. Every flap now carries its own crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
   ];
 
   // Index of each corner's own precrease-corner step, found by scanning
@@ -682,14 +679,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
 
   // See aForce above: once pastFlip, every panel is pinned to uBack
-  // except the 2 (of 16) belonging to whichever corner is actively
-  // mid-fold right now (activeCorner, or null when nothing's animating)
-  // — those 2 are exactly the ones with that corner's bare letter as a
-  // vertex name (see PANELS), matching how frameForStep itself only
-  // moves that same bare-letter point during a precrease-corner step.
-  function setForceColor(pastFlip, activeCorner){
+  // except the 2 (of 16) belonging to each corner actively mid-fold right
+  // now (activeCorners, an array — empty/null when nothing's animating,
+  // 1 entry for a single precrease-corner step, all 4 during
+  // unfold-all-corners) — those pairs are exactly the ones with that
+  // corner's bare letter as a vertex name (see PANELS), matching how
+  // frameForStep itself only moves that same bare-letter point.
+  function setForceColor(pastFlip, activeCorners){
     PANELS.forEach((tri, i)=>{
-      const force = (pastFlip && !(activeCorner && tri.includes(activeCorner))) ? 1 : 0;
+      const isActive = activeCorners && activeCorners.some(c=>tri.includes(c));
+      const force = (pastFlip && !isActive) ? 1 : 0;
       aForce[i*3] = aForce[i*3+1] = aForce[i*3+2] = force;
     });
     geometry.attributes.aForce.needsUpdate = true;
@@ -835,6 +834,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 
+  // Corner X folded to fraction angleRad of its own 180° hinge (see
+  // precrease-corner below for the geometry) — shared by that step and
+  // unfold-all-corners, which runs the same hinge for all 4 corners at
+  // once instead of one at a time.
+  function foldedCorner(X, angleRad){
+    const creaseEdgePoint = SETTLED[X+'_'+PRIMARY_NEIGHBOR[X]+'_r'];
+    const pivot = SETTLED.Ctr;
+    const axis = new THREE.Vector3().subVectors(creaseEdgePoint, pivot);
+    const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
+    return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
+  }
+
   // Computes this step's point positions at completion-fraction p (0 = the
   // step's own starting state, 1 = fully done), independent of any running
   // animation. Used both to animate (feeding it a time-varying p) and to
@@ -874,14 +885,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // itself moves. Every other corner stays put — this is one flap at
       // a time. Computed directly off SETTLED (not a rotated copy of
       // it) — flipGroup is what makes the result appear tip-up.
-      const angleRad = p * Math.PI;
       const X = step.corner;
-      const creaseEdgePoint = SETTLED[X+'_'+PRIMARY_NEIGHBOR[X]+'_r'];
-      const pivot = SETTLED.Ctr;
-      const axis = new THREE.Vector3().subVectors(creaseEdgePoint, pivot);
-      const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
       const out = Object.assign({}, SETTLED);
-      out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
+      out[X] = foldedCorner(X, p * Math.PI);
+      return out;
+    }
+    if(step.type==='unfold-all-corners'){
+      // Reverses all 4 precrease-corner folds in one animation instead of
+      // one at a time — same hinge per corner as precrease-corner above,
+      // just run for all 4 together, and with p's sense flipped so this
+      // step's own p=0 (its start) is "all 4 folded" and p=1 (its end)
+      // is "all 4 back at rest," matching every other step's convention
+      // even though the underlying per-corner angle is running backward.
+      const out = Object.assign({}, SETTLED);
+      ['A','B','C','D'].forEach(X=>{
+        out[X] = foldedCorner(X, (1-p) * Math.PI);
+      });
       return out;
     }
     if(step.type==='flip'){
@@ -931,28 +950,34 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
     const start = performance.now();
     const idx = STEPS.indexOf(step);
-    const activeCorner = step.type==='precrease-corner' ? step.corner : null;
-    // Every step before the flip keeps flipGroup unrotated; every step
-    // after it (all of them past-flip precrease-corner/unfold pairs)
-    // keeps it at the full turn for their whole run. The flip-collapsed
-    // step itself is the only one that rotates flipGroup mid-animation,
-    // tracked per-tick below in lockstep with this step's own progress —
-    // and, per aForce above, is treated as still pre-flip the whole time
-    // (only pinning colors once the turn is actually done), the same way
-    // an ordinary sheet-flip step already shows both sides mid-turn.
-    if(idx !== FLIP_STEP_INDEX){
-      flipGroup.rotation.x = idx > FLIP_STEP_INDEX ? Math.PI : 0;
-      setForceColor(idx > FLIP_STEP_INDEX, activeCorner);
+    const activeCorners = step.type==='precrease-corner' ? [step.corner]
+      : step.type==='unfold-all-corners' ? ['A','B','C','D'] : null;
+    // flipGroup stays unrotated before the flip and fully turned after it
+    // for every step's whole run, except flip-collapsed itself, which
+    // rotates it mid-animation in lockstep with its own progress (tracked
+    // per-tick below). Color follows the same shape (see aForce above):
+    // pinned once pastFlip, except a step's own activeCorners get real
+    // two-sided color for the fold/unfold it's actively swinging through
+    // — settled is false only while that swing is still in progress, so
+    // the very last rendered frame of any step (including a fresh corner
+    // landing back at rest) always resolves to the pinned color, not
+    // whatever gl_FrontFacing happens to say at that specific angle.
+    function updateFlipAndColor(p, settled){
+      if(idx === FLIP_STEP_INDEX){
+        flipGroup.rotation.x = p * Math.PI;
+        setForceColor(settled, null);
+      } else {
+        flipGroup.rotation.x = idx > FLIP_STEP_INDEX ? Math.PI : 0;
+        setForceColor(idx > FLIP_STEP_INDEX, settled ? null : activeCorners);
+      }
     }
+    updateFlipAndColor(reverse ? 1 : 0, false);
 
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
-      if(idx === FLIP_STEP_INDEX){
-        flipGroup.rotation.x = p * Math.PI;
-        setForceColor(p >= 1, null);
-      }
+      updateFlipAndColor(p, t>=1);
       applyFrame(frameForStep(step, p));
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
@@ -995,7 +1020,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : (step.type==='flip'||step.type==='flip-collapsed') ? 'Flip →' : 'Fold →';
+      el.foldBtn.textContent = (step.type==='unfold'||step.type==='unfold-all-corners') ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : (step.type==='flip'||step.type==='flip-collapsed') ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
@@ -1003,6 +1028,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
+      } else if(step.type==='unfold-all-corners'){
+        el.badge.textContent='Unfold'; el.badge.className='badge done';
+        el.stageCaption.textContent='reversing all 4 corner creases at once';
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
