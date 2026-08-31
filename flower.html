@@ -173,7 +173,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <header>
     <h1>Flower base</h1>
   </header>
-  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, one flap at a time (fold its loose corner down to the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
+  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, one flap at a time (fold its loose corner down past the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
 
   <main>
     <div class="board">
@@ -247,19 +247,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
 
   // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
-  // corner down until it touches the bottom point (Ctr) — the crease this
-  // leaves, once unfolded, is what a real squash fold later opens and
-  // presses flat along. Within one flap's rigid triangle (Ctr –
+  // corner down past the bottom point (Ctr), not onto it — confirmed
+  // against real paper. Within one flap's rigid triangle (Ctr –
   // mergedEdgeMidpoint – corner: a right isosceles triangle, legs 50/50,
-  // hypotenuse 70.71, right angle at the merged edge-midpoint), the crease
-  // that lands the corner exactly on Ctr is the perpendicular bisector of
-  // the Ctr–corner hypotenuse — and a right triangle's hypotenuse midpoint
-  // is always equidistant from all 3 vertices, so that bisector is just
-  // the median from the merged-edge-midpoint vertex to the hypotenuse's
-  // own midpoint. So the crease point for every corner is simply the
-  // midpoint of Ctr–corner (t=0.5) — the same fraction for all 4, no
-  // per-corner ratio to derive.
-  const CORNER_FOLD_T = 0.5;
+  // hypotenuse 70.71, right angle at the merged edge-midpoint), the median
+  // from the merged-edge-midpoint vertex to the hypotenuse's own midpoint
+  // bisects that right angle (both legs are equal length) and splits the
+  // triangle into 2 congruent right triangles. The real crease bisects
+  // *that* half-angle again — the angle, at the merged-edge-midpoint
+  // vertex, between this median and the leg running to the corner. That
+  // second bisector crosses the Ctr–corner hypotenuse at t=√2/2 (~0.707):
+  // reflecting the corner across it lands the corner past Ctr, on the far
+  // side of the Ctr–corner edge from the rest of the flap, not on Ctr
+  // itself. Same fraction for all 4 corners, no per-corner ratio to
+  // derive.
+  const CORNER_FOLD_T = Math.SQRT2 / 2;
   // Sets the 4 crease-midpoint keys (mA..mD) on a state object that
   // already has Ctr and A-D, from whatever those points currently are —
   // used for FLAT below, and again for every COLLAPSED-derived state in
@@ -448,7 +450,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down to the bottom point — this creases the flap along the line it will later open and press flat.' },
+    { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the bottom point — this creases the flap along the line it will later open and press flat.' },
     { type:'unfold', label:'Unfold A', instruction:'Unfold. That\'s A\'s crease.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
     { type:'unfold', label:'Unfold B', instruction:'Unfold. B\'s crease.' },
@@ -730,17 +732,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       return withMidpoints(out);
     }
     if(step.type==='precrease-corner'){
-      // This flap's corner folds along its own crease (Ctr-corner's
-      // midpoint — see CORNER_FOLD_T above): a 180° hinge about the axis
-      // through mX and the shared merge point, which — since the merge
-      // point is the crease triangle's right-angle vertex, equidistant
-      // from both Ctr and X — lands X exactly on Ctr at p=1. Stops just
-      // short of that exact endpoint for the same reason the base
-      // collapse does: the corner lands exactly on Ctr, a genuine
-      // coincidence the depth test would otherwise have to break a tie
-      // on. Every other corner stays put — this is one flap at a time.
-      const pc = Math.min(p, 0.98);
-      const angleRad = pc * Math.PI;
+      // This flap's corner folds along its own crease (see CORNER_FOLD_T
+      // above for where that crease sits on the Ctr-corner edge): a 180°
+      // hinge about the axis through that crease point and the shared
+      // merge point. The corner lands past Ctr, not on it — no exact
+      // coincidence with another point here, so unlike the base collapse
+      // this doesn't need to stop short of p=1. Every other corner stays
+      // put — this is one flap at a time.
+      const angleRad = p * Math.PI;
       const X = step.corner;
       const mid = SETTLED['m'+X];
       const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
@@ -855,7 +854,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
       } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
-        el.stageCaption.textContent=`flap ${step.corner} folding its corner down to the bottom point`;
+        el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the bottom point`;
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
