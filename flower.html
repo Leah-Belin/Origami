@@ -246,50 +246,41 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     FLAT[name] = FLAT[n].clone();
   });
 
-  // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
-  // corner down past the *merge point* (the open end this flap hinges
-  // from — not Ctr, the closed tip on the far side), not onto it —
-  // confirmed against real paper, landing about a quarter of the way
-  // past it (measured as a fraction of the full merge-point–corner
-  // length, on the far side from the corner). The crease is
-  // perpendicular to the merge-point–corner line, within the flap's own
-  // plane; reflecting the corner across a perpendicular crease at
-  // fraction t (from the merge point) lands it at mergePt +
-  // (2t-1)*(corner-mergePt) — solving (2t-1) = -0.25 gives t=0.375.
-  // Because the flap's triangle (Ctr, merge point, corner) has a right
-  // angle at the merge point with equal legs (both 50), this same
-  // fraction t, measured from Ctr instead along the Ctr–corner
-  // hypotenuse, lands on that perpendicular crease line too — that's
-  // why mX below (on Ctr–corner) doubles as this crease's pivot, and
-  // why the direction perpendicular to merge-point–corner, within the
-  // plane, is simply Ctr − mergePoint (the *other* leg of that same
-  // right angle). Same fraction for all 4 corners, no per-corner ratio.
-  const CORNER_FOLD_T = 0.375;
-  // Sets the 4 crease-midpoint keys (mA..mD) on a state object that
-  // already has Ctr and A-D, from whatever those points currently are —
-  // used for FLAT below, and again for every COLLAPSED-derived state in
-  // frameForStep, so the crease keeps tracking Ctr/the corners instead of
-  // drifting once they move.
-  function withMidpoints(state){
-    ['A','B','C','D'].forEach(X=>{
-      state['m'+X] = new THREE.Vector3().lerpVectors(state.Ctr, state[X], CORNER_FOLD_T);
-    });
-    return state;
-  }
-  withMidpoints(FLAT);
-
-  // Each layer's own small folding tip — the sliver that actually
-  // swings — is cut off at this same point, but on the layer-point–
-  // corner edge instead of Ctr–corner (see CORNER_FOLD_T above for why
-  // it's the same fraction on both). Kept as its own point per layer
-  // (not reusing the layer point) so PANELS below can render "only the
-  // tip swings, the rest of that layer stays put," instead of the whole
-  // layer (out to its neighboring merge-point copy) swinging together.
+  // Squash-fold precrease, all 4 flaps at once, one layer at a time: each
+  // flap-layer is the triangle Ctr–corner–neighbor (e.g. Ctr–A–N), a right
+  // triangle with the right angle AT the neighbor (both legs 50, so the
+  // Ctr–corner side is the hypotenuse, length 50√2). Confirmed against
+  // real paper: the crease is the bisector, at Ctr, of the angle between
+  // Ctr→corner and Ctr→neighbor — i.e. fold the Ctr–corner edge down onto
+  // the Ctr–neighbor edge. Reflecting ray Ctr→corner across that bisector
+  // lands it exactly on ray Ctr→neighbor (that's what bisecting the angle
+  // between two rays does), and since the corner is farther from Ctr
+  // (50√2) than the neighbor is (50), the corner's reflected image lands
+  // *past* the neighbor along that same ray — matching "the corner ends
+  // up down below" its neighbor.
+  //
+  // Where the bisector crosses the triangle's far side (the corner–
+  // neighbor edge) is the crease's other endpoint (the near endpoint is
+  // Ctr itself — this crease runs through Ctr, unlike a fold hinged on
+  // some offset point). By the angle bisector theorem, that crossing
+  // point P splits corner–neighbor in the same ratio as the two sides
+  // adjacent to the bisected angle: corner–P : P–neighbor = Ctr–corner :
+  // Ctr–neighbor = 50√2 : 50 = √2 : 1. As a fraction from the corner
+  // toward the neighbor, that's √2/(√2+1) = 2−√2 (rationalizing) — the
+  // same fraction for all 4 corners' both layers, since every flap-layer
+  // triangle is congruent.
+  const EDGE_BISECT_T = 2 - Math.SQRT2;
+  // Each layer's crease-edge point (e.g. A_N_r, on the A–N edge) — the
+  // hinge stays fixed at this point (and at Ctr) while the corner swings;
+  // kept as its own point per layer (not reusing the layer point) so
+  // PANELS below can render "only the Ctr–corner–P wedge swings, the
+  // Ctr–P–neighbor wedge stays put," instead of the whole layer (out to
+  // its neighboring merge-point copy) swinging together.
   const CREASE_TIP_POINTS = LAYER_POINTS.map(name => name + '_r');
   function withCreaseTips(state){
     LAYER_POINTS.forEach(name=>{
       const X = name.split('_')[0];
-      state[name+'_r'] = new THREE.Vector3().lerpVectors(state[name], state[X], CORNER_FOLD_T);
+      state[name+'_r'] = new THREE.Vector3().lerpVectors(state[X], state[name], EDGE_BISECT_T);
     });
     return state;
   }
@@ -308,32 +299,33 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     FLIPPED_FLAT[name] = new THREE.Vector3(-p.x, p.y, p.z);
   });
 
-  // 24 triangular faces: the 8 original Ctr+consecutive-outer-point
-  // panels, each pre-split into 3 sub-panels — an untouched inner piece
-  // (Ctr to the crease point mX), an untouched middle piece (mX out to
-  // the crease's other endpoint on the layer-point–corner edge), and the
-  // small folding tip (that endpoint out to the corner) — see
-  // CORNER_FOLD_T above for both crease points. Before the precrease
-  // step runs, every crease point sits exactly on its edge, so every
-  // split is invisible; the precrease step is what folds each flap's
-  // tip past the merge point. Written out explicitly (rather than
-  // patching the loop below) since the split isn't something a general
-  // loop over OUTER should have to know about.
+  // 16 triangular faces: the 8 original Ctr+consecutive-outer-point
+  // panels, each pre-split in 2 along its crease-edge point (see
+  // EDGE_BISECT_T above) — a wedge that folds (Ctr, corner, P) and a
+  // wedge that stays put (Ctr, P, neighbor). Before the precrease step
+  // runs, P sits exactly on the corner–neighbor edge, so the split is
+  // invisible; the precrease step is what folds the Ctr-corner-P wedge
+  // down past the neighbor. Written out explicitly (rather than patching
+  // the loop below) since the split isn't something a general loop over
+  // OUTER should have to know about, and because winding order flips
+  // depending on whether a given position's original (Ctr, outer[i],
+  // outer[i+1]) trio lists the corner or the neighbor first.
   const PANELS = [
-    ['Ctr','mA','A_N'], ['mA','A_N_r','A_N'], ['mA','A','A_N_r'],
-    ['Ctr','B_N','mB'], ['B_N','B_N_r','mB'], ['B_N_r','B','mB'],
-    ['Ctr','mB','B_E'], ['mB','B_E_r','B_E'], ['mB','B','B_E_r'],
-    ['Ctr','C_E','mC'], ['C_E','C_E_r','mC'], ['C_E_r','C','mC'],
-    ['Ctr','mC','C_S'], ['mC','C_S_r','C_S'], ['mC','C','C_S_r'],
-    ['Ctr','D_S','mD'], ['D_S','D_S_r','mD'], ['D_S_r','D','mD'],
-    ['Ctr','mD','D_W'], ['mD','D_W_r','D_W'], ['mD','D','D_W_r'],
-    ['Ctr','A_W','mA'], ['A_W','A_W_r','mA'], ['A_W_r','A','mA'],
+    ['Ctr','A','A_N_r'],    ['Ctr','A_N_r','A_N'],
+    ['Ctr','B_N','B_N_r'],  ['Ctr','B_N_r','B'],
+    ['Ctr','B','B_E_r'],    ['Ctr','B_E_r','B_E'],
+    ['Ctr','C_E','C_E_r'],  ['Ctr','C_E_r','C'],
+    ['Ctr','C','C_S_r'],    ['Ctr','C_S_r','C_S'],
+    ['Ctr','D_S','D_S_r'],  ['Ctr','D_S_r','D'],
+    ['Ctr','D','D_W_r'],    ['Ctr','D_W_r','D_W'],
+    ['Ctr','A_W','A_W_r'],  ['Ctr','A_W_r','A'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
   // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim
-  // segments, plus one crease segment per corner (mX to each of its 2
-  // layer points — the actual hinge a corner's precrease folds along).
+  // segments, plus one crease segment per corner-layer (Ctr to each of
+  // its 2 layer points' own P — the actual hinge that layer's precrease
+  // folds along, which runs through Ctr — see EDGE_BISECT_T above).
   // The crease segments are always in the buffer, but applyFrame below
   // collapses an unrevealed one down to a single point (Ctr) so it draws
   // as nothing — each becomes visible only once that corner's own
@@ -346,7 +338,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['A','B','C','D'].forEach(X=>{
     CREASE_LINE_INDEX[X] = LINE_PAIRS.length;
     const [n1,n2] = CREASE_NEIGHBORS[X];
-    LINE_PAIRS.push('m'+X, X+'_'+n1+'_r', 'm'+X, X+'_'+n2+'_r');
+    LINE_PAIRS.push('Ctr', X+'_'+n1+'_r', 'Ctr', X+'_'+n2+'_r');
   });
 
   function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
@@ -409,14 +401,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     C: new THREE.Vector3(R, 25, R),
     D: new THREE.Vector3(-R, 25, R),
   };
-  withMidpoints(COLLAPSED);
 
   // This is where the 2-layers-per-flap issue noted above LAYER_POINTS
   // actually bites: N/E/S/W all collapse to the exact same point
   // (MERGE_PT), so both of a corner's layer points start out equal to it
   // too — meaning, without more, a corner's 2 panels become exact,
   // oppositely-wound duplicates of each other, both sharing the entire
-  // Ctr–mX–corner crease line, not just a point — nudging one layer's
+  // Ctr–corner crease line, not just a point — nudging one layer's
   // outer point sideways still leaves that whole shared line exactly
   // coincident (a real paper crease genuinely is exactly shared, so
   // there's no "correct" 3D separation to nudge it to). The 2 layers
@@ -443,7 +434,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const primary = PRIMARY_NEIGHBOR[X];
     const secondary = primary===n1 ? n2 : n1;
     COLLAPSED[X+'_'+primary] = MERGE_PT.clone();
-    COLLAPSED[X+'_'+secondary] = COLLAPSED['m'+X].clone();
+    // Any point on the Ctr–corner line degenerates this layer's triangle
+    // to zero area — Ctr itself works (and, unlike the old mX, needs no
+    // separate point of its own): with the secondary layer's neighbor
+    // copy sitting at Ctr, its own crease-edge point (computed below by
+    // withCreaseTips as a lerp between the corner and this copy) is
+    // forced onto the Ctr–corner line too, so both of its sub-panels
+    // stay degenerate.
+    COLLAPSED[X+'_'+secondary] = COLLAPSED.Ctr.clone();
   });
   withCreaseTips(COLLAPSED);
 
@@ -459,8 +457,36 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
     SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
   });
-  withMidpoints(SETTLED);
+  // The lerp above interpolates each secondary layer's neighbor-copy
+  // independently from FLAT toward COLLAPSED (where it's exactly on the
+  // Ctr–corner line, forcing that layer degenerate — see PRIMARY_NEIGHBOR
+  // above) — but 98% of the way there is only *near* that line, not on
+  // it, and "merely collinear" isn't a robust way to force zero area:
+  // it relies on 3 independently-computed points staying exactly
+  // in line through however many more transforms this state still goes
+  // through (the flip, then whichever corner's own precrease fold), and
+  // floating point doesn't guarantee that — a large enough rotation was
+  // enough to flip which side of the resulting razor-thin sliver faced
+  // the camera, a stray white edge. Forcing an exact, bit-identical
+  // repeat of Ctr as a
+  // vertex instead (both here and for this layer's own crease-edge point
+  // below) is robust in a way collinearity isn't: two vertices of a
+  // triangle that are bit-for-bit the same value stay bit-for-bit the
+  // same after any transform (the same deterministic math applied to
+  // the same input twice gives the same output twice), so the triangle
+  // it's part of has exactly zero area, always, at every step downstream
+  // — not just in this idealized, untransformed state.
+  ['A','B','C','D'].forEach(X=>{
+    const [n1,n2] = CREASE_NEIGHBORS[X];
+    const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
+    SETTLED[X+'_'+secondary] = SETTLED.Ctr.clone();
+  });
   withCreaseTips(SETTLED);
+  ['A','B','C','D'].forEach(X=>{
+    const [n1,n2] = CREASE_NEIGHBORS[X];
+    const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
+    SETTLED[X+'_'+secondary+'_r'] = SETTLED.Ctr.clone();
+  });
 
   // The squash-fold precrease is done holding the base with its closed
   // tip (Ctr — every panel funnels down to this single point) pointing
@@ -469,14 +495,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // down where each flap is worked in turn — confirmed against real
   // paper. SETTLED comes out of the collapse with the closed tip down
   // instead (that orientation was itself confirmed against paper for the
-  // collapse step), so this flips it: a rotation about a horizontal axis
-  // (X here — an arbitrary but fixed choice) swaps up/down while keeping
-  // it a valid rigid rotation, not a mirror-image reflection.
+  // collapse step): this axis (X — an arbitrary but fixed choice) is what
+  // flipGroup (see above) rotates 180° around to swap up/down as a rigid
+  // rotation, not a mirror-image reflection. Every precrease-corner fold
+  // still computes its own geometry directly from SETTLED, unrotated —
+  // flipGroup is the only thing that makes the result actually appear
+  // tip-up.
   const FLIP_UP_AXIS = new THREE.Vector3(1, 0, 0);
-  const SETTLED_UP = {};
-  Object.keys(SETTLED).forEach(name=>{
-    SETTLED_UP[name] = rotateAroundAxisAtOrigin(SETTLED[name], FLIP_UP_AXIS, Math.PI);
-  });
 
   // ---- Steps ----
   const STEPS = [
@@ -510,6 +535,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const CORNER_FOLD_STEP_INDEX = {};
   STEPS.forEach((s,i)=>{ if(s.type==='precrease-corner') CORNER_FOLD_STEP_INDEX[s.corner] = i; });
 
+  // Index of the one flip-collapsed step — used to decide, at any given
+  // moment, whether flipGroup (see above) should sit unrotated (paper
+  // not yet turned over) or at its full 180° (turned over).
+  const FLIP_STEP_INDEX = STEPS.findIndex(s=>s.type==='flip-collapsed');
+
   // Declared here (rather than down with the rest of the playback state)
   // so it's already initialized by the time the initial applyFrame(FLAT)
   // call below reads it — applyFrame is defined before the playback
@@ -537,6 +567,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   const group = new THREE.Group();
   scene.add(group);
+  // The flip-collapsed step's 180° turn (see FLIP_UP_AXIS above) lives
+  // here, as a real rotation of this wrapping group, rather than baked
+  // into the paper's own vertex positions — unlike every other step's
+  // animation, which computes new point positions each frame. That's
+  // deliberate: a fixed camera watching a *vertex* rotation genuinely
+  // does end up looking at whatever was previously the far side (a real
+  // consequence of physically turning the base over without moving your
+  // eye), which read as "weird coloring" once confirmed against paper.
+  // A *group* rotation doesn't have that problem — it composes with the
+  // user's own drag/auto-sway rotation on the outer `group` exactly the
+  // way those already do, so gl_FrontFacing keeps resolving correctly
+  // from any angle, not just the one this app happens to render at.
+  // Every precrease-corner fold's own geometry is computed in the
+  // pre-flip (SETTLED) frame regardless — flipGroup's rotation is the
+  // only thing that makes the whole base visibly sit tip-up afterward.
+  const flipGroup = new THREE.Group();
+  group.add(flipGroup);
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.7));
   const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
@@ -549,6 +596,24 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const vertCount = PANELS.length * 3;
   const positions = new Float32Array(vertCount * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  // gl_FrontFacing alone answers "which side of this triangle faces the
+  // camera *right now*" — exactly what a folding flap needs, since which
+  // side it shows genuinely depends on how far it's swung. But once the
+  // base is collapsed and flipped, a handful of its panels sit at angles,
+  // relative to that 180° turn, where a realistic amount of ambient
+  // sway or drag brings their normal edge-on to the camera and past —
+  // showing their (correct, uFront/white) reverse for a real reason, not
+  // a bug, but one this app already settled for every *other* corner via
+  // PRIMARY_NEIGHBOR (choosing the layer that's confirmed to face out,
+  // once, rather than re-deriving it live per frame). aForce carries
+  // that same "already confirmed, no need to re-check" decision forward
+  // for a corner's static (not currently mid-fold) geometry once it's
+  // past the flip: 1 pins a vertex's triangle to uBack outright, 0 falls
+  // back to gl_FrontFacing as normal — still needed for a flap actively
+  // swinging through its own fold, which legitimately shows both sides.
+  const aForce = new Float32Array(vertCount);
+  geometry.setAttribute('aForce', new THREE.BufferAttribute(aForce, 1));
 
   // True two-sided paper: gl_FrontFacing asks, per pixel, which side of
   // the triangle currently faces the camera, so front/back color is
@@ -566,21 +631,26 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
   paperMat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, colorUniforms);
-    shader.fragmentShader = 'uniform vec3 uFront;\nuniform vec3 uBack;\n' + shader.fragmentShader.replace(
+    shader.vertexShader = 'attribute float aForce;\nvarying float vForce;\n' + shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      vForce = aForce;`
+    );
+    shader.fragmentShader = 'uniform vec3 uFront;\nuniform vec3 uBack;\nvarying float vForce;\n' + shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>
-      diffuseColor.rgb = gl_FrontFacing ? uFront : uBack;`
+      diffuseColor.rgb = (vForce > 0.5) ? uBack : (gl_FrontFacing ? uFront : uBack);`
     );
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
-  group.add(paperMesh);
+  flipGroup.add(paperMesh);
 
   const linePositions = new Float32Array(LINE_PAIRS.length * 3);
   const lineGeo = new THREE.BufferGeometry();
   lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
   const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
   const lines = new THREE.LineSegments(lineGeo, lineMat);
-  group.add(lines);
+  flipGroup.add(lines);
 
   function applyFrame(frame){
     let vi = 0;
@@ -611,7 +681,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     lineGeo.attributes.position.needsUpdate = true;
   }
 
+  // See aForce above: once pastFlip, every panel is pinned to uBack
+  // except the 2 (of 16) belonging to whichever corner is actively
+  // mid-fold right now (activeCorner, or null when nothing's animating)
+  // — those 2 are exactly the ones with that corner's bare letter as a
+  // vertex name (see PANELS), matching how frameForStep itself only
+  // moves that same bare-letter point during a precrease-corner step.
+  function setForceColor(pastFlip, activeCorner){
+    PANELS.forEach((tri, i)=>{
+      const force = (pastFlip && !(activeCorner && tri.includes(activeCorner))) ? 1 : 0;
+      aForce[i*3] = aForce[i*3+1] = aForce[i*3+2] = force;
+    });
+    geometry.attributes.aForce.needsUpdate = true;
+  }
+
   applyFrame(FLAT);
+  setForceColor(false, null);
 
   function resize(){
     const w = stageEl.clientWidth, h = stageEl.clientHeight;
@@ -771,42 +856,31 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
-      return withCreaseTips(withMidpoints(out));
+      return withCreaseTips(out);
     }
     if(step.type==='flip-collapsed'){
-      // Rigid 180° turn of the whole collapsed base about a horizontal
-      // axis (see FLIP_UP_AXIS above) — every point moves together, from
-      // SETTLED (closed tip down, as the collapse itself was confirmed
-      // against paper) to SETTLED_UP (closed tip up, the hold this app's
-      // corner-precrease steps are confirmed against instead).
-      const angleRad = p * Math.PI;
-      const out = {};
-      Object.keys(SETTLED).forEach(name=>{
-        out[name] = rotateAroundAxisAtOrigin(SETTLED[name], FLIP_UP_AXIS, angleRad);
-      });
-      return out;
+      // The turn itself is a flipGroup rotation (see above), driven
+      // directly off this step's progress by the animation loop below,
+      // not a change in point positions — every point stays at SETTLED
+      // throughout.
+      return SETTLED;
     }
     if(step.type==='precrease-corner'){
-      // This flap's corner folds past the merge point (see CORNER_FOLD_T
-      // above), not past Ctr — a 180° hinge, pivoting at the crease
-      // point (mX, on Ctr-corner — see CORNER_FOLD_T for why that
-      // doubles as this crease's pivot even though the crease itself
-      // runs perpendicular to merge-point-corner instead), about the
-      // direction perpendicular to the merge-point–corner line within
-      // the flap's own plane. That direction is simply Ctr − the
-      // surviving layer point: the flap's triangle (Ctr, layer point,
-      // corner) has a right angle AT the layer point, so the Ctr–layer-
-      // point leg is already perpendicular to the layer-point–corner
-      // leg — no separate construction needed. Every other corner stays
-      // put — this is one flap at a time. Uses the post-flip (SETTLED_UP)
-      // frame, since this step only ever runs after flip-collapsed.
+      // This flap's corner folds down onto its neighbor's ray from Ctr —
+      // a 180° hinge about the crease line itself (see EDGE_BISECT_T
+      // above), which runs through Ctr and that layer's own crease-edge
+      // point (X+'_'+primary+'_r'). That point sits ON the axis, so it
+      // (and everything else in SETTLED) stays fixed; only the corner
+      // itself moves. Every other corner stays put — this is one flap at
+      // a time. Computed directly off SETTLED (not a rotated copy of
+      // it) — flipGroup is what makes the result appear tip-up.
       const angleRad = p * Math.PI;
       const X = step.corner;
-      const layerPoint = SETTLED_UP[X+'_'+PRIMARY_NEIGHBOR[X]];
-      const pivot = SETTLED_UP['m'+X];
-      const axis = new THREE.Vector3().subVectors(SETTLED_UP.Ctr, layerPoint);
-      const rel = new THREE.Vector3().subVectors(SETTLED_UP[X], pivot);
-      const out = Object.assign({}, SETTLED_UP);
+      const creaseEdgePoint = SETTLED[X+'_'+PRIMARY_NEIGHBOR[X]+'_r'];
+      const pivot = SETTLED.Ctr;
+      const axis = new THREE.Vector3().subVectors(creaseEdgePoint, pivot);
+      const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
+      const out = Object.assign({}, SETTLED);
       out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
       return out;
     }
@@ -824,7 +898,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
       });
-      return withCreaseTips(withMidpoints(out));
+      return withCreaseTips(out);
     }
     const ref = step.ref || FLAT;
     const angleRad = p * Math.PI;
@@ -849,18 +923,36 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
         : ref[name].clone();
     });
-    return withCreaseTips(withMidpoints(out));
+    return withCreaseTips(out);
   }
 
   function animateStep(step, reverse, onDone){
     const isCollapse = step.type==='collapse';
     const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
     const start = performance.now();
+    const idx = STEPS.indexOf(step);
+    const activeCorner = step.type==='precrease-corner' ? step.corner : null;
+    // Every step before the flip keeps flipGroup unrotated; every step
+    // after it (all of them past-flip precrease-corner/unfold pairs)
+    // keeps it at the full turn for their whole run. The flip-collapsed
+    // step itself is the only one that rotates flipGroup mid-animation,
+    // tracked per-tick below in lockstep with this step's own progress —
+    // and, per aForce above, is treated as still pre-flip the whole time
+    // (only pinning colors once the turn is actually done), the same way
+    // an ordinary sheet-flip step already shows both sides mid-turn.
+    if(idx !== FLIP_STEP_INDEX){
+      flipGroup.rotation.x = idx > FLIP_STEP_INDEX ? Math.PI : 0;
+      setForceColor(idx > FLIP_STEP_INDEX, activeCorner);
+    }
 
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
+      if(idx === FLIP_STEP_INDEX){
+        flipGroup.rotation.x = p * Math.PI;
+        setForceColor(p >= 1, null);
+      }
       applyFrame(frameForStep(step, p));
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
@@ -946,6 +1038,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function reset(){
     stepIndex = 0; animating = false;
+    flipGroup.rotation.x = 0;
+    setForceColor(false, null);
     applyFrame(FLAT);
     updatePanel();
   }
@@ -959,6 +1053,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     n = Math.max(0, Math.min(n, STEPS.length));
     playing = false; el.playBtn.textContent = '▶ Play all';
     stepIndex = n;
+    flipGroup.rotation.x = n > FLIP_STEP_INDEX ? Math.PI : 0;
+    setForceColor(n > FLIP_STEP_INDEX, null);
     applyFrame(stateBeforeStep(n));
     updatePanel();
   }
