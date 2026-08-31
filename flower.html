@@ -470,24 +470,32 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     LINE_PAIRS.push('Ctr', X+'_'+PRIMARY_NEIGHBOR[X]+'_r');
   });
 
-  // The other edge of that same surviving wedge (Ctr, X, X_primary_r —
-  // see PANELS above): from the crease point down to the corner's own
-  // paper tip. Not a fold at all, just the sheet's free edge — but real
-  // paper has thickness, and this is exactly where the hidden second
-  // layer's own edge sits right behind it. That edge is *not* its own
-  // separate line pair here (unlike BASE_FOLD_LINE_INDEX above) because
-  // it sits exactly on top of the surviving layer's own outer silhouette
-  // — the same dark overlay color drawn there would just retrace a line
-  // that's already visible for free, adding nothing. See PEEK_EDGE_PAIRS
-  // further down, where this same (creasePoint, corner) pair is drawn in
-  // the paper's own back color instead, so it actually reads as that
-  // hidden layer peeking through rather than disappearing into the
-  // silhouette it's coincident with.
+  // The surviving layer for corner X is 2 right triangles meeting at the
+  // crease point (Ctr,X,X_primary_r — the moving wedge — and
+  // Ctr,X_primary_r,X_primary — the static one; see PANELS above),
+  // confirmed against a real folded model by looking at the *back* of
+  // one folded flap: 2 right triangles, the right angle in both sitting
+  // at the crease point, one leg shared (the Ctr–crease-point line,
+  // continuing on through the crease point to the folded-down corner
+  // once that fold's happened — see foldedCorner) and the other leg
+  // (crease-point to X_primary) is the one edge of this shape that
+  // isn't drawn anywhere yet. Without it, this whole shape reads as one
+  // straight line (Ctr through the crease point to X), not the 2
+  // triangles a real model actually shows there. Both of this shape's
+  // non-shared legs are collected here rather than folded into the dark
+  // CREASE_LINE_INDEX/rim overlay above, because each sits exactly on
+  // top of the surviving layer's own outer silhouette or rim edge — the
+  // same dark, semi-transparent color drawn there would just retrace a
+  // line that's already visible for free (or lose a depth-test tie
+  // against the paper mesh outright, confirmed against a real render).
+  // Drawn instead in the paper's own back color further down, so this
+  // reads as the hidden layer's own crease pattern peeking through.
   const PEEK_EDGE_PAIRS = [];
   const PEEK_EDGE_INDEX = {};
   ['A','B','C','D'].forEach(X=>{
     PEEK_EDGE_INDEX[X] = PEEK_EDGE_PAIRS.length;
     PEEK_EDGE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X);
+    PEEK_EDGE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X+'_'+PRIMARY_NEIGHBOR[X]);
   });
 
   // The squash-fold precrease (every step after the collapse) is done
@@ -789,13 +797,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       peekEdgePositions[i*3]=p.x; peekEdgePositions[i*3+1]=p.y; peekEdgePositions[i*3+2]=p.z;
     });
     // Same collapse-to-a-point hiding as BASE_FOLD_LINE_INDEX above —
-    // nothing to peek before the base has collapsed.
+    // nothing to peek before the base has collapsed. 4 points per corner
+    // now (2 segments — see PEEK_EDGE_PAIRS above), all collapsed the
+    // same way.
     if(stepIndex <= COLLAPSE_STEP_INDEX){
       ['A','B','C','D'].forEach(X=>{
         const start = PEEK_EDGE_INDEX[X];
         const c = frame.Ctr || FLAT.Ctr;
-        peekEdgePositions[start*3]=c.x; peekEdgePositions[start*3+1]=c.y; peekEdgePositions[start*3+2]=c.z;
-        peekEdgePositions[(start+1)*3]=c.x; peekEdgePositions[(start+1)*3+1]=c.y; peekEdgePositions[(start+1)*3+2]=c.z;
+        for(let k=0;k<4;k++){
+          peekEdgePositions[(start+k)*3]=c.x; peekEdgePositions[(start+k)*3+1]=c.y; peekEdgePositions[(start+k)*3+2]=c.z;
+        }
       });
     }
     peekEdgeGeo.attributes.position.needsUpdate = true;
