@@ -568,6 +568,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   camera.position.set(100, 55, 115);
   camera.lookAt(0, 0, 0);
 
+  // How far to spin the base (about Y, same axis auto-sway/drag already
+  // use) so a given corner sits facing the fixed camera instead of
+  // wherever the collapse happens to leave it — computed once from each
+  // corner's actual position (COLLAPSED_UP, already in the as-rendered
+  // tip-up orientation) rather than assumed, since the 4 corners aren't
+  // evenly spaced relative to this camera angle (B already sits close to
+  // facing it; A, C, and D don't). Applied whenever that corner's own
+  // precrease-corner step becomes current, so its fold is never stuck
+  // playing out on the far side of the model from the viewer.
+  const CORNER_FACING_ANGLE = {};
+  ['A','B','C','D'].forEach(X=>{
+    const p = COLLAPSED_UP[X];
+    CORNER_FACING_ANGLE[X] = Math.atan2(camera.position.x, camera.position.z) - Math.atan2(p.x, p.z);
+  });
+
   const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
   stageEl.appendChild(renderer.domElement);
 
@@ -714,6 +729,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const DRAG_THRESHOLD = 4;
   let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
   let downX = 0, downY = 0, lastX = 0, lastY = 0;
+  // The angle auto-sway settles around — normally 0, but set to a
+  // corner's own CORNER_FACING_ANGLE (see above) whenever that corner's
+  // precrease-corner step becomes current, so the fold plays out facing
+  // the viewer instead of wherever the model happened to be left. Reset
+  // to 0 alongside stepIndex on reset(); left alone by a manual drag,
+  // same as the sway itself.
+  let baseRotationY = 0;
 
   const dragHintEl = document.getElementById('dragHint');
   function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
@@ -767,9 +789,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
 
   function renderLoop(){
-    if(!userRotating && !reducedMotion){
-      autoRotate += 0.003;
-      group.rotation.y = Math.sin(autoRotate) * 0.35;
+    if(!userRotating){
+      if(!reducedMotion){
+        autoRotate += 0.003;
+        group.rotation.y = baseRotationY + Math.sin(autoRotate) * 0.35;
+      } else {
+        group.rotation.y = baseRotationY;
+      }
     }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
@@ -974,6 +1000,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const idx = STEPS.indexOf(step);
     const activeCorners = step.type==='precrease-corner' ? [step.corner]
       : step.type==='unfold-all-corners' ? ['A','B','C','D'] : null;
+    // Turn to face whichever corner is about to fold (see
+    // CORNER_FACING_ANGLE above) — overrides a manual drag the same way
+    // a fresh corner's own fold is always shown, not left wherever the
+    // viewer last spun it, so every corner's fold is actually visible by
+    // default rather than possibly playing out on the far side.
+    if(step.type==='precrease-corner'){
+      baseRotationY = CORNER_FACING_ANGLE[step.corner];
+      userRotating = false;
+      group.rotation.set(0, baseRotationY, 0);
+    }
     // Color follows aForce above: pinned once past the collapse, except
     // a step's own activeCorners get real two-sided color for the
     // fold/unfold it's actively swinging through — settled is false only
@@ -1078,6 +1114,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function reset(){
     stepIndex = 0; animating = false;
+    baseRotationY = 0; userRotating = false; group.rotation.set(0, 0, 0);
     setForceColor(false, null);
     applyFrame(FLAT);
     updatePanel();
@@ -1092,6 +1129,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     n = Math.max(0, Math.min(n, STEPS.length));
     playing = false; el.playBtn.textContent = '▶ Play all';
     stepIndex = n;
+    // Face the corner about to fold, same as animateStep does — see
+    // CORNER_FACING_ANGLE above.
+    const upcoming = STEPS[n];
+    baseRotationY = (upcoming && upcoming.type==='precrease-corner') ? CORNER_FACING_ANGLE[upcoming.corner] : 0;
+    userRotating = false;
+    group.rotation.set(0, baseRotationY, 0);
     setForceColor(n > COLLAPSE_STEP_INDEX, null);
     applyFrame(stateBeforeStep(n));
     updatePanel();
