@@ -474,18 +474,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // see PANELS above): from the crease point down to the corner's own
   // paper tip. Not a fold at all, just the sheet's free edge — but real
   // paper has thickness, and this is exactly where the hidden second
-  // layer's own edge sits right behind it, close enough to the surviving
-  // layer's edge to read as a fine line rather than the wider, colored
-  // sliver of the reverted attempt. Gated the same as BASE_FOLD_LINE_INDEX
-  // (nothing to show before the base has collapsed), and safe to leave
-  // showing through a corner's own fold afterward: foldedCorner rotates
-  // the corner point about the axis through Ctr and this exact crease
-  // point, so the crease point itself never moves — only the far end of
-  // this segment swings with the corner it belongs to.
-  const FLAP_EDGE_LINE_INDEX = {};
+  // layer's own edge sits right behind it. That edge is *not* its own
+  // separate line pair here (unlike BASE_FOLD_LINE_INDEX above) because
+  // it sits exactly on top of the surviving layer's own outer silhouette
+  // — the same dark overlay color drawn there would just retrace a line
+  // that's already visible for free, adding nothing. See PEEK_EDGE_PAIRS
+  // further down, where this same (creasePoint, corner) pair is drawn in
+  // the paper's own back color instead, so it actually reads as that
+  // hidden layer peeking through rather than disappearing into the
+  // silhouette it's coincident with.
+  const PEEK_EDGE_PAIRS = [];
+  const PEEK_EDGE_INDEX = {};
   ['A','B','C','D'].forEach(X=>{
-    FLAP_EDGE_LINE_INDEX[X] = LINE_PAIRS.length;
-    LINE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X);
+    PEEK_EDGE_INDEX[X] = PEEK_EDGE_PAIRS.length;
+    PEEK_EDGE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X);
   });
 
   // The squash-fold precrease (every step after the collapse) is done
@@ -683,7 +685,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // source) so the color swatches can change it live.
   const colorUniforms = { uFront: { value: new THREE.Color(...WHITE) }, uBack: { value: new THREE.Color(...RED) } };
   const paperMat = new THREE.MeshStandardMaterial({
-    side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
+    side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true,
+    // Pushes the filled paper surface back very slightly in the depth
+    // buffer (WebGL applies this to triangle rasterization only, which
+    // is exactly what's needed here) — every crease/rim/peek line above
+    // runs exactly along some paper edge, i.e. at exactly the same
+    // depth as this mesh there, and without this offset that exact tie
+    // is a coin flip per pixel: some lines happened to win it, but the
+    // new PEEK_EDGE_PAIRS line (confirmed against a real render) lost
+    // it outright and never drew at all.
+    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1
   });
   paperMat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, colorUniforms);
@@ -707,6 +718,31 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
+
+  // See PEEK_EDGE_PAIRS above — drawn in the paper's own back color
+  // (WHITE, the same fixed uFront used for the hidden side everywhere
+  // else) rather than the dark overlay color the rest of these lines
+  // use, specifically so it reads as that hidden layer's own edge
+  // peeking through instead of blending into the silhouette it runs
+  // along.
+  // The paperMesh polygonOffset above settles this line's depth-test tie
+  // against the paper surface it runs along, but `lines` above (the dark
+  // rim/crease overlay) is transparent and this segment overlaps part of
+  // that overlay's own (B, E)-style rim segment exactly (X_primary_r
+  // lies ON the straight line from X to its neighbor) — transparent
+  // objects always draw after every opaque one, so without a higher
+  // renderOrder than `lines`, that dark overlay would still paint its
+  // 40%-opacity black right back over this white line, dimming it back
+  // toward invisible. Marked transparent (opacity 1, so still visually
+  // solid) purely to land in that same later render pass, ordered after
+  // `lines` so it paints on top instead of under.
+  const peekEdgePositions = new Float32Array(PEEK_EDGE_PAIRS.length * 3);
+  const peekEdgeGeo = new THREE.BufferGeometry();
+  peekEdgeGeo.setAttribute('position', new THREE.BufferAttribute(peekEdgePositions, 3));
+  const peekEdgeMat = new THREE.LineBasicMaterial({ color: new THREE.Color(...WHITE), transparent:true, opacity:1 });
+  const peekEdgeLines = new THREE.LineSegments(peekEdgeGeo, peekEdgeMat);
+  peekEdgeLines.renderOrder = 1;
+  group.add(peekEdgeLines);
 
   function applyFrame(frame){
     let vi = 0;
@@ -745,18 +781,24 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         linePositions[start*3]=c.x; linePositions[start*3+1]=c.y; linePositions[start*3+2]=c.z;
         linePositions[(start+1)*3]=c.x; linePositions[(start+1)*3+1]=c.y; linePositions[(start+1)*3+2]=c.z;
       });
-      // Same trick for FLAP_EDGE_LINE_INDEX (see above) — collapsed to
-      // the same single point as BASE_FOLD_LINE_INDEX above; which point
-      // doesn't matter since a zero-length segment draws as nothing
-      // either way.
-      ['A','B','C','D'].forEach(X=>{
-        const start = FLAP_EDGE_LINE_INDEX[X];
-        const c = frame.Ctr || FLAT.Ctr;
-        linePositions[start*3]=c.x; linePositions[start*3+1]=c.y; linePositions[start*3+2]=c.z;
-        linePositions[(start+1)*3]=c.x; linePositions[(start+1)*3+1]=c.y; linePositions[(start+1)*3+2]=c.z;
-      });
     }
     lineGeo.attributes.position.needsUpdate = true;
+
+    PEEK_EDGE_PAIRS.forEach((name,i)=>{
+      const p = frame[name] || FLAT[name];
+      peekEdgePositions[i*3]=p.x; peekEdgePositions[i*3+1]=p.y; peekEdgePositions[i*3+2]=p.z;
+    });
+    // Same collapse-to-a-point hiding as BASE_FOLD_LINE_INDEX above —
+    // nothing to peek before the base has collapsed.
+    if(stepIndex <= COLLAPSE_STEP_INDEX){
+      ['A','B','C','D'].forEach(X=>{
+        const start = PEEK_EDGE_INDEX[X];
+        const c = frame.Ctr || FLAT.Ctr;
+        peekEdgePositions[start*3]=c.x; peekEdgePositions[start*3+1]=c.y; peekEdgePositions[start*3+2]=c.z;
+        peekEdgePositions[(start+1)*3]=c.x; peekEdgePositions[(start+1)*3+1]=c.y; peekEdgePositions[(start+1)*3+2]=c.z;
+      });
+    }
+    peekEdgeGeo.attributes.position.needsUpdate = true;
   }
 
   // See aForce above: once pastCollapse, every panel (including whichever
