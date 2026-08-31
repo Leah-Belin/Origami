@@ -628,12 +628,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // wrong answer for the other half — not an edge-on sliver, a wide,
   // wrong-colored arc, since the 2 fixed-position lights and the fixed
   // camera don't track which way the model's been turned. So once
-  // collapsed, color is pinned outright rather than trusted to
-  // gl_FrontFacing at all — the paper never shows anything but uBack
-  // (red) from this point on, matching the confirmed-correct resting
-  // exterior color, including for whichever corner is actively folding:
-  // the precrease steps only ever crease the paper (see the crease-line
-  // overlay below) and fold back — they don't turn it inside out.
+  // collapsed, color is pinned outright to uBack (red, the confirmed
+  // resting exterior color) rather than trusted to gl_FrontFacing at
+  // all, including for whichever corner is actively folding — the
+  // precrease steps only ever crease the paper (see the crease-line
+  // overlay below) and fold back, they don't turn it inside out. (Each
+  // corner's hidden second layer is a separate mesh, not part of this
+  // one — see PEEK_LAYERS further down.)
   const aForce = new Float32Array(vertCount);
   geometry.setAttribute('aForce', new THREE.BufferAttribute(aForce, 1));
 
@@ -666,6 +667,68 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
   group.add(paperMesh);
+
+  // Each corner's hidden second layer (see PRIMARY_NEIGHBOR above) is
+  // exactly degenerate in `geometry` above — genuinely zero area, the
+  // right call for the surviving layer's own duplicate. But it isn't
+  // nothing on real paper: it's still a full layer, just tucked behind
+  // its surviving twin, and real paper isn't perfectly thin — confirmed
+  // against a real folded model, a sliver of that hidden layer's own
+  // true color (uFront, white — this is the layer that lost the
+  // "which one stays outward-facing" pick, not the one that's outward)
+  // shows past the surviving layer's own edge, right where they meet.
+  // Modeled as its own small, separate mesh — extrapolated a little
+  // past the true merge point along the same Ctr→neighbor line the
+  // surviving layer's own edge sits on, so it's visibly wider there —
+  // rather than folded into `geometry` above, for one reason: draw
+  // order. Rendered first, with depth *testing* on (so it still
+  // correctly tucks behind anything genuinely nearer) but depth
+  // *writing* off (so it never wins a fight against the coincident
+  // surviving layer drawn right after it, which would otherwise
+  // flicker between the two at random) — the surviving layer's own
+  // opaque fill then simply paints over all of this mesh except the
+  // sliver past its own edge, which is exactly the peek this is for.
+  const SECONDARY_PEEK_SCALE = 1.06;
+  const PEEK_LAYERS = [];
+  ['A','B','C','D'].forEach(X=>{
+    const [n1,n2] = CREASE_NEIGHBORS[X];
+    const primary = PRIMARY_NEIGHBOR[X];
+    const secondary = primary===n1 ? n2 : n1;
+    PEEK_LAYERS.push({ corner:X, primary, secondary });
+  });
+  const peekGeometry = new THREE.BufferGeometry();
+  const peekVertCount = PEEK_LAYERS.length * 2 * 3;
+  const peekPositions = new Float32Array(peekVertCount * 3);
+  peekGeometry.setAttribute('position', new THREE.BufferAttribute(peekPositions, 3));
+  const peekMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(...WHITE), roughness:0.85, metalness:0.05, flatShading:true,
+    side: THREE.DoubleSide, depthWrite: false
+  });
+  const peekMesh = new THREE.Mesh(peekGeometry, peekMat);
+  peekMesh.renderOrder = -1;
+  group.add(peekMesh);
+
+  // Same (Ctr, neighbor, tip) / (Ctr, tip, corner) vertex order for
+  // every corner's hidden layer, unlike the surviving layers in PANELS
+  // above (whose order varies with ring position) — the hidden layer
+  // was always the second-listed CREASE_NEIGHBORS entry losing the
+  // PRIMARY_NEIGHBOR pick, so its own winding never needed to vary the
+  // way the choice of *which* layer survives did.
+  function applyPeekFrame(frame){
+    let vi = 0;
+    PEEK_LAYERS.forEach(({corner:X, primary})=>{
+      const Ctr = frame.Ctr || FLAT.Ctr;
+      const cornerPt = frame[X] || FLAT[X];
+      const primaryNeighborPt = frame[X+'_'+primary] || FLAT[X+'_'+primary];
+      const peekNeighbor = new THREE.Vector3().lerpVectors(Ctr, primaryNeighborPt, SECONDARY_PEEK_SCALE);
+      const peekTip = new THREE.Vector3().lerpVectors(cornerPt, peekNeighbor, EDGE_BISECT_T);
+      [Ctr, peekNeighbor, peekTip, Ctr, peekTip, cornerPt].forEach(p=>{
+        peekPositions[vi*3]=p.x; peekPositions[vi*3+1]=p.y; peekPositions[vi*3+2]=p.z; vi++;
+      });
+    });
+    peekGeometry.attributes.position.needsUpdate = true;
+    peekGeometry.computeVertexNormals();
+  }
 
   const linePositions = new Float32Array(LINE_PAIRS.length * 3);
   const lineGeo = new THREE.BufferGeometry();
@@ -701,14 +764,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       }
     });
     lineGeo.attributes.position.needsUpdate = true;
+    applyPeekFrame(frame);
   }
 
   // See aForce above: once pastCollapse, every panel (including whichever
-  // corner is actively mid-fold) is pinned to uBack.
+  // corner is actively mid-fold) is pinned to uBack. The hidden-layer
+  // peek mesh only makes sense once collapsed too — pre-collapse, Ctr,
+  // a corner, and its neighbor are still 3 genuinely distinct flat-sheet
+  // points, not a layer stack, so there's no "peeking past the edge" to
+  // show yet.
   function setForceColor(pastCollapse){
     const force = pastCollapse ? 1 : 0;
     aForce.fill(force);
     geometry.attributes.aForce.needsUpdate = true;
+    peekMesh.visible = pastCollapse;
   }
 
   applyFrame(FLAT);
