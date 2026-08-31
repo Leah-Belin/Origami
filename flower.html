@@ -846,6 +846,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
   }
 
+  // Corners folded by an earlier precrease-corner step than this one —
+  // each stays fully folded (not reset back to SETTLED) while a later
+  // corner's own fold animates, since all 4 folds now run back to back
+  // with no unfold in between (see unfold-all-corners below for the
+  // step that finally reverses all of them together).
+  function priorFoldedCorners(step){
+    const idx = STEPS.indexOf(step);
+    return STEPS.slice(0, idx).filter(s=>s.type==='precrease-corner').map(s=>s.corner);
+  }
+
   // Computes this step's point positions at completion-fraction p (0 = the
   // step's own starting state, 1 = fully done), independent of any running
   // animation. Used both to animate (feeding it a time-varying p) and to
@@ -882,11 +892,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // above), which runs through Ctr and that layer's own crease-edge
       // point (X+'_'+primary+'_r'). That point sits ON the axis, so it
       // (and everything else in SETTLED) stays fixed; only the corner
-      // itself moves. Every other corner stays put — this is one flap at
-      // a time. Computed directly off SETTLED (not a rotated copy of
-      // it) — flipGroup is what makes the result appear tip-up.
+      // itself moves. Computed directly off SETTLED (not a rotated copy
+      // of it) — flipGroup is what makes the result appear tip-up.
+      // Corners folded by an earlier step (see priorFoldedCorners above)
+      // stay folded here too, rather than resetting to SETTLED along
+      // with every corner this step doesn't itself concern.
       const X = step.corner;
       const out = Object.assign({}, SETTLED);
+      priorFoldedCorners(step).forEach(pc=>{ out[pc] = foldedCorner(pc, Math.PI); });
       out[X] = foldedCorner(X, p * Math.PI);
       return out;
     }
