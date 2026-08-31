@@ -423,16 +423,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // layer alone already covers the flap's full area once collapsed,
   // since the two were duplicates anyway.
   //
-  // Which of the 2 counts as "surviving" isn't arbitrary: each of the 8
-  // original (pre-split) ring panels has its own fixed front/back facing
-  // once collapsed (checked directly against the solved 3D positions),
-  // and it's a genuine mix, not 4-fold symmetric — 3 corners' first-
-  // listed CREASE_NEIGHBORS entry faces out, but D's does not. Picking
-  // the wrong one per corner would make that flap show its inside
-  // (front/white) while its neighbors show outside (back/uBack) —
-  // exactly the "wrong color" a viewer would notice. This table is the
-  // one choice, per corner, that makes all 4 agree.
-  const PRIMARY_NEIGHBOR = { A:'N', B:'N', C:'E', D:'W' };
+  // Which of the 2 counts as "surviving" isn't arbitrary — not because
+  // one of the two would show the wrong color (color is pinned outright
+  // once collapsed, independent of which layer survives — see aForce
+  // further down), but because the 4 sides (N/E/S/W) each need exactly
+  // one of their 2 bordering corners to claim them: A and B both border
+  // N, B and C both border E, C and D both border S, D and A both border
+  // W — a 4-cycle, so every corner picking its own first-listed
+  // CREASE_NEIGHBORS entry (the naive default) claims N twice (A and B)
+  // and leaves S unclaimed by either C or D — a real gap, a whole side of
+  // the base with no surviving geometry at all, not just a cosmetic
+  // color mismatch. A 4-cycle has exactly 2 matchings where every side
+  // gets claimed once: this table is one of them (picked over its mirror
+  // — A:W, B:N, C:E, D:S — because that one needs D's *first*-listed
+  // entry, S, which read backwards on inspection; W didn't).
+  const PRIMARY_NEIGHBOR = { A:'N', B:'E', C:'S', D:'W' };
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const primary = PRIMARY_NEIGHBOR[X];
