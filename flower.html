@@ -185,7 +185,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 19</span>
+          <span class="step-count" id="stepCount">Step 1 of 20</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -248,20 +248,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
   // corner down past the bottom point (Ctr), not onto it — confirmed
-  // against real paper. Within one flap's rigid triangle (Ctr –
-  // mergedEdgeMidpoint – corner: a right isosceles triangle, legs 50/50,
-  // hypotenuse 70.71, right angle at the merged edge-midpoint), the median
-  // from the merged-edge-midpoint vertex to the hypotenuse's own midpoint
-  // bisects that right angle (both legs are equal length) and splits the
-  // triangle into 2 congruent right triangles. The real crease bisects
-  // *that* half-angle again — the angle, at the merged-edge-midpoint
-  // vertex, between this median and the leg running to the corner. That
-  // second bisector crosses the Ctr–corner hypotenuse at t=√2/2 (~0.707):
-  // reflecting the corner across it lands the corner past Ctr, on the far
-  // side of the Ctr–corner edge from the rest of the flap, not on Ctr
-  // itself. Same fraction for all 4 corners, no per-corner ratio to
-  // derive.
-  const CORNER_FOLD_T = Math.SQRT2 / 2;
+  // against real paper, landing about a quarter of the way past Ctr
+  // (measured as a fraction of the full Ctr–corner length, on the far
+  // side of Ctr from the corner). The crease is perpendicular to the
+  // Ctr–corner line, within the flap's own plane; reflecting the corner
+  // across a perpendicular crease at fraction t (from Ctr) lands it at
+  // Ctr + (2t-1)*(corner-Ctr) — solving (2t-1) = -0.25 (a quarter past,
+  // opposite side from the corner) gives t=0.375. Same fraction for all
+  // 4 corners, no per-corner ratio to derive.
+  const CORNER_FOLD_T = 0.375;
   // Sets the 4 crease-midpoint keys (mA..mD) on a state object that
   // already has Ctr and A-D, from whatever those points currently are —
   // used for FLAT below, and again for every COLLAPSED-derived state in
@@ -437,6 +432,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
   withMidpoints(SETTLED);
 
+  // The squash-fold precrease is done holding the base with its closed
+  // tip (Ctr — every panel funnels down to this single point) pointing
+  // up, and the open end (the merge point, where 4 formerly-separate
+  // edge-midpoints now sit, surrounded by the spread corners) hanging
+  // down where each flap is worked in turn — confirmed against real
+  // paper. SETTLED comes out of the collapse with the closed tip down
+  // instead (that orientation was itself confirmed against paper for the
+  // collapse step), so this flips it: a rotation about a horizontal axis
+  // (X here — an arbitrary but fixed choice) swaps up/down while keeping
+  // it a valid rigid rotation, not a mirror-image reflection.
+  const FLIP_UP_AXIS = new THREE.Vector3(1, 0, 0);
+  const SETTLED_UP = {};
+  Object.keys(SETTLED).forEach(name=>{
+    SETTLED_UP[name] = rotateAroundAxisAtOrigin(SETTLED[name], FLIP_UP_AXIS, Math.PI);
+  });
+  const MERGE_PT_UP = rotateAroundAxisAtOrigin(MERGE_PT, FLIP_UP_AXIS, Math.PI);
+
   // ---- Steps ----
   const STEPS = [
     { type:'fold', crease:['W','E'], moving:['N','A','B'], label:'Fold top down', instruction:'Fold the top down to the bottom, creating a horizontal center crease.' },
@@ -450,6 +462,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
+    { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the bottom point — this creases the flap along the line it will later open and press flat.' },
     { type:'unfold', label:'Unfold A', instruction:'Unfold. That\'s A\'s crease.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
@@ -731,21 +744,43 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       });
       return withMidpoints(out);
     }
+    if(step.type==='flip-collapsed'){
+      // Rigid 180° turn of the whole collapsed base about a horizontal
+      // axis (see FLIP_UP_AXIS above) — every point moves together, from
+      // SETTLED (closed tip down, as the collapse itself was confirmed
+      // against paper) to SETTLED_UP (closed tip up, the hold this app's
+      // corner-precrease steps are confirmed against instead).
+      const angleRad = p * Math.PI;
+      const out = {};
+      Object.keys(SETTLED).forEach(name=>{
+        out[name] = rotateAroundAxisAtOrigin(SETTLED[name], FLIP_UP_AXIS, angleRad);
+      });
+      return out;
+    }
     if(step.type==='precrease-corner'){
       // This flap's corner folds along its own crease (see CORNER_FOLD_T
       // above for where that crease sits on the Ctr-corner edge): a 180°
-      // hinge about the axis through that crease point and the shared
-      // merge point. The corner lands past Ctr, not on it — no exact
-      // coincidence with another point here, so unlike the base collapse
-      // this doesn't need to stop short of p=1. Every other corner stays
-      // put — this is one flap at a time.
+      // hinge, pivoting at the crease point, about the direction
+      // perpendicular to the Ctr-corner line within the flap's own
+      // plane. That direction is the same regardless of where along the
+      // line the crease sits, and happens to equal (merge point − the
+      // Ctr-corner *midpoint*, always at t=0.5) — not (merge point − the
+      // actual crease point), which would only be perpendicular at
+      // t=0.5. Using the wrong one here previously sent the corner
+      // sideways instead of straight past Ctr. The corner lands past
+      // Ctr, not on it — no exact coincidence with another point here,
+      // so unlike the base collapse this doesn't need to stop short of
+      // p=1. Every other corner stays put — this is one flap at a time.
+      // Uses the post-flip (SETTLED_UP / MERGE_PT_UP) frame, since this
+      // step only ever runs after flip-collapsed.
       const angleRad = p * Math.PI;
       const X = step.corner;
-      const mid = SETTLED['m'+X];
-      const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
-      const rel = new THREE.Vector3().subVectors(SETTLED[X], mid);
-      const out = Object.assign({}, SETTLED);
-      out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(mid);
+      const pivot = SETTLED_UP['m'+X];
+      const trueMid = new THREE.Vector3().lerpVectors(SETTLED_UP.Ctr, SETTLED_UP[X], 0.5);
+      const axis = new THREE.Vector3().subVectors(MERGE_PT_UP, trueMid);
+      const rel = new THREE.Vector3().subVectors(SETTLED_UP[X], pivot);
+      const out = Object.assign({}, SETTLED_UP);
+      out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
       return out;
     }
     if(step.type==='flip'){
@@ -841,7 +876,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : (step.type==='flip'||step.type==='flip-collapsed') ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
@@ -852,6 +887,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
+      } else if(step.type==='flip-collapsed'){
+        el.badge.textContent='Flip'; el.badge.className='badge done';
+        el.stageCaption.textContent='rigid 180° turn of the whole base, closed tip to open tip';
       } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the bottom point`;
