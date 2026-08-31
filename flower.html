@@ -888,19 +888,24 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // doesn't hold that guarantee: each layer-specific N/E/S/W copy is only
   // SETTLED's 98%-lerp away from FLAT — not the exact merge point — and
   // each corner's copy carries a different 2% residual toward its own
-  // *different* FLAT-state neighbor (A/B's toward FLAT.N, C's toward
-  // FLAT.E, D's toward FLAT.W) — different enough, after reflecting
-  // across it, to send corners folding toward two different lines on
-  // opposite sides of the model instead of one shared line. Using the
-  // bare SETTLED.N — the same single point for all 4 corners, not a
-  // per-layer copy — for every corner's bisector removes that
-  // divergence at the source: whichever residual SETTLED.N itself
-  // carries is now shared identically by all 4, so they still land
-  // exactly together. (Any of SETTLED.N/E/S/W would do equally, being
-  // themselves already-converged copies of the same collapsed point —
-  // N is just a fixed, arbitrary pick.) The bisector direction itself is
-  // the sum of the two unit vectors from Ctr — a standard identity, and
-  // exactly the direction the old per-layer construction was aiming for.
+  // *different* FLAT-state neighbor (A's toward FLAT.N, B's toward
+  // FLAT.E, C's toward FLAT.S, D's toward FLAT.W) — different enough,
+  // after reflecting across it, to send corners folding toward two
+  // different lines on opposite sides of the model instead of one shared
+  // line. Using COLLAPSED_UP.N — the exact merge point, not a 98%-lerped
+  // approximation of it, and bit-identical to COLLAPSED_UP.E/S/W since
+  // they're all literally the same collapsed point — removes that
+  // divergence at the source, and more precisely than any SETTLED-based
+  // pick could: reflecting through the exact point lands every corner
+  // exactly on it (not just consistently near it), *and* — unlike
+  // reflecting through SETTLED.N specifically, which only happens to sit
+  // in corner A's own local crease-plane (A's primary neighbor is N) —
+  // it stays equally exact for B, C, and D's own crease-planes too, since
+  // there's no single favored corner baked into an exact point the way
+  // there is into any one SETTLED N/E/S/W pick. The bisector direction
+  // itself is the sum of the two unit vectors from Ctr — a standard
+  // identity, and exactly the direction the old per-layer construction
+  // was aiming for.
   // Which way this bisector axis points is only pinned down (by the
   // addVectors identity above) up to sign — flipping it doesn't change
   // where p=1 lands (a 180° rotation about an axis and about its negation
@@ -924,7 +929,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const pivot = SETTLED.Ctr;
     const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
     const toCorner = rel.clone().normalize();
-    const toMerge = new THREE.Vector3().subVectors(SETTLED.N, pivot).normalize();
+    const toMerge = new THREE.Vector3().subVectors(COLLAPSED_UP.N, pivot).normalize();
     const axis = new THREE.Vector3().addVectors(toCorner, toMerge);
     const lift = new THREE.Vector3().crossVectors(axis, rel);
     const liftInView = lift.applyAxisAngle(new THREE.Vector3(0,1,0), CORNER_FACING_ANGLE[X]);
@@ -935,7 +940,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const pivot = SETTLED.Ctr;
     const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
     const toCorner = rel.clone().normalize();
-    const toMerge = new THREE.Vector3().subVectors(SETTLED.N, pivot).normalize();
+    const toMerge = new THREE.Vector3().subVectors(COLLAPSED_UP.N, pivot).normalize();
     const axis = new THREE.Vector3().addVectors(toCorner, toMerge).multiplyScalar(FOLD_AXIS_SIGN[X]);
     return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
   }
