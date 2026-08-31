@@ -524,9 +524,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base, closed tip up and the 4 corners spread below it as an open rim, meeting at one point in the middle — that\'s the hold for working each flap\'s corner next. This is the preliminary base.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
+    { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner — the opposite corner from A, folding down onto that same central line.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
-    { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner.' },
-    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — the last one. All 4 are folded down now.' },
+    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — the last one, opposite B onto its own central line. All 4 are folded down now.' },
     { type:'unfold-all-corners', label:'Unfold all', instruction:'Unfold all 4 at once. Every flap now carries its own crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
   ];
 
@@ -852,6 +852,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 
+  // The nearby target angle equivalent to `to` (mod 2π) that's closest to
+  // `from` — so easing group.rotation.y toward it always takes the short
+  // way around, even after a manual drag has wound rotation.y up well
+  // past a single turn.
+  function nearestEquivalentAngle(from, to){
+    const twoPi = Math.PI * 2;
+    let delta = (to - from) % twoPi;
+    if(delta > Math.PI) delta -= twoPi;
+    if(delta < -Math.PI) delta += twoPi;
+    return from + delta;
+  }
+
   // Corner X folded to fraction angleRad of its own 180° hinge (see
   // precrease-corner below for the geometry) — shared by that step and
   // unfold-all-corners, which runs the same hinge for all 4 corners at
@@ -1004,11 +1016,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     // CORNER_FACING_ANGLE above) — overrides a manual drag the same way
     // a fresh corner's own fold is always shown, not left wherever the
     // viewer last spun it, so every corner's fold is actually visible by
-    // default rather than possibly playing out on the far side.
+    // default rather than possibly playing out on the far side. Eased in
+    // over the same duration as the fold itself (see frame() below),
+    // not snapped instantly — adjacent corners can be a full 180° apart
+    // (e.g. A then C), and jumping the whole view there in a single
+    // frame read as a broken jump-cut rather than a turn. userRotating
+    // is held true for the duration so renderLoop's own sway doesn't
+    // fight this over group.rotation.y at the same time.
+    const fromRotY = group.rotation.y, fromRotX = group.rotation.x;
+    const toRotY = step.type==='precrease-corner'
+      ? nearestEquivalentAngle(fromRotY, CORNER_FACING_ANGLE[step.corner])
+      : fromRotY;
     if(step.type==='precrease-corner'){
-      baseRotationY = CORNER_FACING_ANGLE[step.corner];
-      userRotating = false;
-      group.rotation.set(0, baseRotationY, 0);
+      baseRotationY = toRotY;
+      userRotating = true;
     }
     // Color follows aForce above: pinned once past the collapse, except
     // a step's own activeCorners get real two-sided color for the
@@ -1028,9 +1049,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
+      if(step.type==='precrease-corner'){
+        group.rotation.y = fromRotY + (toRotY - fromRotY) * te;
+        group.rotation.x = fromRotX * (1 - te);
+      }
       updateColor(t>=1);
       applyFrame(frameForStep(step, p));
       if(t<1){ requestAnimationFrame(frame); return; }
+      if(step.type==='precrease-corner') userRotating = false;
       onDone();
     }
     requestAnimationFrame(frame);
