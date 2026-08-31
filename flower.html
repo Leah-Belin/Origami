@@ -224,6 +224,28 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     W: new THREE.Vector3(-50,0,0),
   };
 
+  // Each corner's flap is really 2 layers of paper — bounded by its 2
+  // neighboring edge-midpoints, which is why the panels below reference
+  // 2 separate names per corner (e.g. A_N and A_W) instead of reusing
+  // bare N/W. Before the collapse they're just copies of N/E/S/W (no
+  // divergence yet: FLAT and FLIPPED_FLAT don't distinguish "which
+  // corner's copy"); once collapsed, N/E/S/W all become the very same
+  // point, and without 2 distinctly-tracked copies per corner, that
+  // corner's 2 panels would be exact, oppositely-wound duplicates of
+  // each other — a depth-test tie the GPU breaks arbitrarily, visible as
+  // the wrong (inside) color flashing through, or a fold looking like it
+  // hit the wrong flap. See where COLLAPSED gives the 2nd copy a tiny
+  // nudge, below.
+  const CREASE_NEIGHBORS = { A:['N','W'], B:['N','E'], C:['E','S'], D:['S','W'] };
+  const LAYER_POINTS = [];
+  ['A','B','C','D'].forEach(X=>{
+    CREASE_NEIGHBORS[X].forEach(n=> LAYER_POINTS.push(X+'_'+n));
+  });
+  LAYER_POINTS.forEach(name=>{
+    const n = name.split('_')[1];
+    FLAT[name] = FLAT[n].clone();
+  });
+
   // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
   // corner down until it touches the bottom point (Ctr) — the crease this
   // leaves, once unfolded, is what a real squash fold later opens and
@@ -273,26 +295,25 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // than patching the loop below) since the split isn't something a
   // general loop over OUTER should have to know about.
   const PANELS = [
-    ['Ctr','mA','N'], ['mA','A','N'],
-    ['Ctr','N','mB'], ['N','B','mB'],
-    ['Ctr','mB','E'], ['mB','B','E'],
-    ['Ctr','E','mC'], ['E','C','mC'],
-    ['Ctr','mC','S'], ['mC','C','S'],
-    ['Ctr','S','mD'], ['S','D','mD'],
-    ['Ctr','mD','W'], ['mD','D','W'],
-    ['Ctr','W','mA'], ['W','A','mA'],
+    ['Ctr','mA','A_N'], ['mA','A','A_N'],
+    ['Ctr','B_N','mB'], ['B_N','B','mB'],
+    ['Ctr','mB','B_E'], ['mB','B','B_E'],
+    ['Ctr','C_E','mC'], ['C_E','C','mC'],
+    ['Ctr','mC','C_S'], ['mC','C','C_S'],
+    ['Ctr','D_S','mD'], ['D_S','D','mD'],
+    ['Ctr','mD','D_W'], ['mD','D','D_W'],
+    ['Ctr','A_W','mA'], ['A_W','A','mA'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
   // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim
   // segments, plus one crease segment per corner (mX to each of its 2
-  // neighbor merge-points — the actual hinge a corner's precrease folds
-  // along). The crease segments are always in the buffer, but applyFrame
-  // below collapses an unrevealed one down to a single point (Ctr) so it
-  // draws as nothing — each becomes visible only once that corner's own
+  // layer points — the actual hinge a corner's precrease folds along).
+  // The crease segments are always in the buffer, but applyFrame below
+  // collapses an unrevealed one down to a single point (Ctr) so it draws
+  // as nothing — each becomes visible only once that corner's own
   // fold+unfold pair has run, so the line reads as "a crease left behind
   // by a fold you've seen happen," not a mark on paper that's never bent.
-  const CREASE_NEIGHBORS = { A:['N','W'], B:['N','E'], C:['E','S'], D:['S','W'] };
   const LINE_PAIRS = [];
   OUTER.forEach(n=>LINE_PAIRS.push('Ctr',n));
   for(let i=0;i<OUTER.length;i++) LINE_PAIRS.push(OUTER[i], OUTER[(i+1)%OUTER.length]);
@@ -300,7 +321,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['A','B','C','D'].forEach(X=>{
     CREASE_LINE_INDEX[X] = LINE_PAIRS.length;
     const [n1,n2] = CREASE_NEIGHBORS[X];
-    LINE_PAIRS.push('m'+X, n1, 'm'+X, n2);
+    LINE_PAIRS.push('m'+X, X+'_'+n1, 'm'+X, X+'_'+n2);
   });
 
   function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
@@ -364,6 +385,55 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     D: new THREE.Vector3(-R, 25, R),
   };
   withMidpoints(COLLAPSED);
+
+  // This is where the 2-layers-per-flap issue noted above LAYER_POINTS
+  // actually bites: N/E/S/W all collapse to the exact same point
+  // (MERGE_PT), so both of a corner's layer points start out equal to it
+  // too — meaning, without more, a corner's 2 panels become exact,
+  // oppositely-wound duplicates of each other, both sharing the entire
+  // Ctr–mX–corner crease line, not just a point — nudging one layer's
+  // outer point sideways still leaves that whole shared line exactly
+  // coincident (a real paper crease genuinely is exactly shared, so
+  // there's no "correct" 3D separation to nudge it to). The 2 layers
+  // really are exact duplicates once collapsed (2 different regions of
+  // the original sheet, stacked) — so instead of rendering both and
+  // hoping the GPU's depth test guesses right, only 1 of them stays a
+  // real triangle; the other collapses to the crease point itself,
+  // degenerating to zero area so it draws as nothing. The surviving
+  // layer alone already covers the flap's full area once collapsed,
+  // since the two were duplicates anyway.
+  //
+  // Which of the 2 counts as "surviving" isn't arbitrary: each of the 8
+  // original (pre-split) ring panels has its own fixed front/back facing
+  // once collapsed (checked directly against the solved 3D positions),
+  // and it's a genuine mix, not 4-fold symmetric — 3 corners' first-
+  // listed CREASE_NEIGHBORS entry faces out, but D's does not. Picking
+  // the wrong one per corner would make that flap show its inside
+  // (front/white) while its neighbors show outside (back/uBack) —
+  // exactly the "wrong color" a viewer would notice. This table is the
+  // one choice, per corner, that makes all 4 agree.
+  const PRIMARY_NEIGHBOR = { A:'N', B:'N', C:'E', D:'W' };
+  ['A','B','C','D'].forEach(X=>{
+    const [n1,n2] = CREASE_NEIGHBORS[X];
+    const primary = PRIMARY_NEIGHBOR[X];
+    const secondary = primary===n1 ? n2 : n1;
+    COLLAPSED[X+'_'+primary] = MERGE_PT.clone();
+    COLLAPSED[X+'_'+secondary] = COLLAPSED['m'+X].clone();
+  });
+
+  // Every step after the collapse (each corner's precrease fold, and any
+  // jump/replay landing on "the collapsed base") reads from this instead
+  // of the idealized COLLAPSED values directly, for the same "stop just
+  // short of the exact endpoint" reason the collapse animation itself
+  // uses pc=min(p,0.98) below: at p=1 every point would sit exactly on
+  // its target, and a few of those targets (Ctr, at the very end of a
+  // corner's own fold) are genuine coincidences the depth test would
+  // otherwise have to break a tie on.
+  const SETTLED = {};
+  ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
+    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
+  });
+  withMidpoints(SETTLED);
 
   // ---- Steps ----
   const STEPS = [
@@ -654,7 +724,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // the second turn-over in the STEPS array.
       const pc = Math.min(p, 0.98);
       const out = {};
-      ['Ctr', ...OUTER].forEach(name=>{
+      ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
       return withMidpoints(out);
@@ -672,10 +742,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const pc = Math.min(p, 0.98);
       const angleRad = pc * Math.PI;
       const X = step.corner;
-      const mid = COLLAPSED['m'+X];
+      const mid = SETTLED['m'+X];
       const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
-      const rel = new THREE.Vector3().subVectors(COLLAPSED[X], mid);
-      const out = Object.assign({}, COLLAPSED);
+      const rel = new THREE.Vector3().subVectors(SETTLED[X], mid);
+      const out = Object.assign({}, SETTLED);
       out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(mid);
       return out;
     }
@@ -690,7 +760,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const axis = new THREE.Vector3(0, 0, 1);
       const from = step.from || FLAT;
       const out = {};
-      ['Ctr', ...OUTER].forEach(name=>{
+      ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
       });
       return withMidpoints(out);
@@ -705,6 +775,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const out = { Ctr: ref.Ctr.clone() };
     OUTER.forEach(name=>{
       out[name] = step.moving.includes(name)
+        ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
+        : ref[name].clone();
+    });
+    // Each layer point (e.g. A_N) tracks its underlying neighbor (N)'s
+    // moving/static status — pre-collapse they're still just copies of
+    // N/E/S/W, so whichever way this step's crease moves N/E/S/W is
+    // exactly how their per-corner layer copies should move too.
+    LAYER_POINTS.forEach(name=>{
+      const n = name.split('_')[1];
+      out[name] = step.moving.includes(n)
         ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
         : ref[name].clone();
     });
