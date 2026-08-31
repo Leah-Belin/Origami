@@ -173,7 +173,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <header>
     <h1>Flower base</h1>
   </header>
-  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, one flap at a time (fold its loose corner down past the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
+  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped, then a flip so the closed tip points up — plus the precrease for the squash fold, one flap at a time (fold its loose corner down past the open merge point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
 
   <main>
     <div class="board">
@@ -247,15 +247,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
 
   // Squash-fold precrease, all 4 flaps at once: fold each flap's loose
-  // corner down past the bottom point (Ctr), not onto it — confirmed
-  // against real paper, landing about a quarter of the way past Ctr
-  // (measured as a fraction of the full Ctr–corner length, on the far
-  // side of Ctr from the corner). The crease is perpendicular to the
-  // Ctr–corner line, within the flap's own plane; reflecting the corner
-  // across a perpendicular crease at fraction t (from Ctr) lands it at
-  // Ctr + (2t-1)*(corner-Ctr) — solving (2t-1) = -0.25 (a quarter past,
-  // opposite side from the corner) gives t=0.375. Same fraction for all
-  // 4 corners, no per-corner ratio to derive.
+  // corner down past the *merge point* (the open end this flap hinges
+  // from — not Ctr, the closed tip on the far side), not onto it —
+  // confirmed against real paper, landing about a quarter of the way
+  // past it (measured as a fraction of the full merge-point–corner
+  // length, on the far side from the corner). The crease is
+  // perpendicular to the merge-point–corner line, within the flap's own
+  // plane; reflecting the corner across a perpendicular crease at
+  // fraction t (from the merge point) lands it at mergePt +
+  // (2t-1)*(corner-mergePt) — solving (2t-1) = -0.25 gives t=0.375.
+  // Because the flap's triangle (Ctr, merge point, corner) has a right
+  // angle at the merge point with equal legs (both 50), this same
+  // fraction t, measured from Ctr instead along the Ctr–corner
+  // hypotenuse, lands on that perpendicular crease line too — that's
+  // why mX below (on Ctr–corner) doubles as this crease's pivot, and
+  // why the direction perpendicular to merge-point–corner, within the
+  // plane, is simply Ctr − mergePoint (the *other* leg of that same
+  // right angle). Same fraction for all 4 corners, no per-corner ratio.
   const CORNER_FOLD_T = 0.375;
   // Sets the 4 crease-midpoint keys (mA..mD) on a state object that
   // already has Ctr and A-D, from whatever those points currently are —
@@ -270,6 +278,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
   withMidpoints(FLAT);
 
+  // Each layer's own small folding tip — the sliver that actually
+  // swings — is cut off at this same point, but on the layer-point–
+  // corner edge instead of Ctr–corner (see CORNER_FOLD_T above for why
+  // it's the same fraction on both). Kept as its own point per layer
+  // (not reusing the layer point) so PANELS below can render "only the
+  // tip swings, the rest of that layer stays put," instead of the whole
+  // layer (out to its neighboring merge-point copy) swinging together.
+  const CREASE_TIP_POINTS = LAYER_POINTS.map(name => name + '_r');
+  function withCreaseTips(state){
+    LAYER_POINTS.forEach(name=>{
+      const X = name.split('_')[0];
+      state[name+'_r'] = new THREE.Vector3().lerpVectors(state[name], state[X], CORNER_FOLD_T);
+    });
+    return state;
+  }
+  withCreaseTips(FLAT);
+
   // The real sequence turns the paper over between the horizontal/vertical
   // creases and the diagonal ones — that's what lets every crease be an
   // easy valley fold (toward whoever's folding) instead of forcing two of
@@ -283,23 +308,26 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     FLIPPED_FLAT[name] = new THREE.Vector3(-p.x, p.y, p.z);
   });
 
-  // 16 triangular faces: the 8 original Ctr+consecutive-outer-point
-  // panels, each pre-split along its own corner's Ctr→corner crease (see
-  // CORNER_FOLD_T above) into 2 sub-panels. Before the precrease step
-  // runs, every mX point sits exactly on its Ctr–corner edge, so every
+  // 24 triangular faces: the 8 original Ctr+consecutive-outer-point
+  // panels, each pre-split into 3 sub-panels — an untouched inner piece
+  // (Ctr to the crease point mX), an untouched middle piece (mX out to
+  // the crease's other endpoint on the layer-point–corner edge), and the
+  // small folding tip (that endpoint out to the corner) — see
+  // CORNER_FOLD_T above for both crease points. Before the precrease
+  // step runs, every crease point sits exactly on its edge, so every
   // split is invisible; the precrease step is what folds each flap's
-  // corner-side sub-panel down toward Ctr. Written out explicitly (rather
-  // than patching the loop below) since the split isn't something a
-  // general loop over OUTER should have to know about.
+  // tip past the merge point. Written out explicitly (rather than
+  // patching the loop below) since the split isn't something a general
+  // loop over OUTER should have to know about.
   const PANELS = [
-    ['Ctr','mA','A_N'], ['mA','A','A_N'],
-    ['Ctr','B_N','mB'], ['B_N','B','mB'],
-    ['Ctr','mB','B_E'], ['mB','B','B_E'],
-    ['Ctr','C_E','mC'], ['C_E','C','mC'],
-    ['Ctr','mC','C_S'], ['mC','C','C_S'],
-    ['Ctr','D_S','mD'], ['D_S','D','mD'],
-    ['Ctr','mD','D_W'], ['mD','D','D_W'],
-    ['Ctr','A_W','mA'], ['A_W','A','mA'],
+    ['Ctr','mA','A_N'], ['mA','A_N_r','A_N'], ['mA','A','A_N_r'],
+    ['Ctr','B_N','mB'], ['B_N','B_N_r','mB'], ['B_N_r','B','mB'],
+    ['Ctr','mB','B_E'], ['mB','B_E_r','B_E'], ['mB','B','B_E_r'],
+    ['Ctr','C_E','mC'], ['C_E','C_E_r','mC'], ['C_E_r','C','mC'],
+    ['Ctr','mC','C_S'], ['mC','C_S_r','C_S'], ['mC','C','C_S_r'],
+    ['Ctr','D_S','mD'], ['D_S','D_S_r','mD'], ['D_S_r','D','mD'],
+    ['Ctr','mD','D_W'], ['mD','D_W_r','D_W'], ['mD','D','D_W_r'],
+    ['Ctr','A_W','mA'], ['A_W','A_W_r','mA'], ['A_W_r','A','mA'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
@@ -318,7 +346,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['A','B','C','D'].forEach(X=>{
     CREASE_LINE_INDEX[X] = LINE_PAIRS.length;
     const [n1,n2] = CREASE_NEIGHBORS[X];
-    LINE_PAIRS.push('m'+X, X+'_'+n1, 'm'+X, X+'_'+n2);
+    LINE_PAIRS.push('m'+X, X+'_'+n1+'_r', 'm'+X, X+'_'+n2+'_r');
   });
 
   function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
@@ -417,6 +445,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     COLLAPSED[X+'_'+primary] = MERGE_PT.clone();
     COLLAPSED[X+'_'+secondary] = COLLAPSED['m'+X].clone();
   });
+  withCreaseTips(COLLAPSED);
 
   // Every step after the collapse (each corner's precrease fold, and any
   // jump/replay landing on "the collapsed base") reads from this instead
@@ -431,6 +460,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
   });
   withMidpoints(SETTLED);
+  withCreaseTips(SETTLED);
 
   // The squash-fold precrease is done holding the base with its closed
   // tip (Ctr — every panel funnels down to this single point) pointing
@@ -447,7 +477,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   Object.keys(SETTLED).forEach(name=>{
     SETTLED_UP[name] = rotateAroundAxisAtOrigin(SETTLED[name], FLIP_UP_AXIS, Math.PI);
   });
-  const MERGE_PT_UP = rotateAroundAxisAtOrigin(MERGE_PT, FLIP_UP_AXIS, Math.PI);
 
   // ---- Steps ----
   const STEPS = [
@@ -463,7 +492,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
     { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
-    { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the bottom point — this creases the flap along the line it will later open and press flat.' },
+    { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
     { type:'unfold', label:'Unfold A', instruction:'Unfold. That\'s A\'s crease.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
     { type:'unfold', label:'Unfold B', instruction:'Unfold. B\'s crease.' },
@@ -742,7 +771,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
-      return withMidpoints(out);
+      return withCreaseTips(withMidpoints(out));
     }
     if(step.type==='flip-collapsed'){
       // Rigid 180° turn of the whole collapsed base about a horizontal
@@ -758,26 +787,24 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       return out;
     }
     if(step.type==='precrease-corner'){
-      // This flap's corner folds along its own crease (see CORNER_FOLD_T
-      // above for where that crease sits on the Ctr-corner edge): a 180°
-      // hinge, pivoting at the crease point, about the direction
-      // perpendicular to the Ctr-corner line within the flap's own
-      // plane. That direction is the same regardless of where along the
-      // line the crease sits, and happens to equal (merge point − the
-      // Ctr-corner *midpoint*, always at t=0.5) — not (merge point − the
-      // actual crease point), which would only be perpendicular at
-      // t=0.5. Using the wrong one here previously sent the corner
-      // sideways instead of straight past Ctr. The corner lands past
-      // Ctr, not on it — no exact coincidence with another point here,
-      // so unlike the base collapse this doesn't need to stop short of
-      // p=1. Every other corner stays put — this is one flap at a time.
-      // Uses the post-flip (SETTLED_UP / MERGE_PT_UP) frame, since this
-      // step only ever runs after flip-collapsed.
+      // This flap's corner folds past the merge point (see CORNER_FOLD_T
+      // above), not past Ctr — a 180° hinge, pivoting at the crease
+      // point (mX, on Ctr-corner — see CORNER_FOLD_T for why that
+      // doubles as this crease's pivot even though the crease itself
+      // runs perpendicular to merge-point-corner instead), about the
+      // direction perpendicular to the merge-point–corner line within
+      // the flap's own plane. That direction is simply Ctr − the
+      // surviving layer point: the flap's triangle (Ctr, layer point,
+      // corner) has a right angle AT the layer point, so the Ctr–layer-
+      // point leg is already perpendicular to the layer-point–corner
+      // leg — no separate construction needed. Every other corner stays
+      // put — this is one flap at a time. Uses the post-flip (SETTLED_UP)
+      // frame, since this step only ever runs after flip-collapsed.
       const angleRad = p * Math.PI;
       const X = step.corner;
+      const layerPoint = SETTLED_UP[X+'_'+PRIMARY_NEIGHBOR[X]];
       const pivot = SETTLED_UP['m'+X];
-      const trueMid = new THREE.Vector3().lerpVectors(SETTLED_UP.Ctr, SETTLED_UP[X], 0.5);
-      const axis = new THREE.Vector3().subVectors(MERGE_PT_UP, trueMid);
+      const axis = new THREE.Vector3().subVectors(SETTLED_UP.Ctr, layerPoint);
       const rel = new THREE.Vector3().subVectors(SETTLED_UP[X], pivot);
       const out = Object.assign({}, SETTLED_UP);
       out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
@@ -797,7 +824,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
         out[name] = rotateAroundAxisAtOrigin(from[name], axis, angleRad);
       });
-      return withMidpoints(out);
+      return withCreaseTips(withMidpoints(out));
     }
     const ref = step.ref || FLAT;
     const angleRad = p * Math.PI;
@@ -822,7 +849,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         ? rotateAroundAxisAtOrigin(ref[name], axisDir, angleRad).add(new THREE.Vector3(0, lift, 0))
         : ref[name].clone();
     });
-    return withMidpoints(out);
+    return withCreaseTips(withMidpoints(out));
   }
 
   function animateStep(step, reverse, onDone){
@@ -892,7 +919,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         el.stageCaption.textContent='rigid 180° turn of the whole base, closed tip to open tip';
       } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
-        el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the bottom point`;
+        el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the open merge point`;
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
