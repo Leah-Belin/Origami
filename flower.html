@@ -454,6 +454,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
   withCreaseTips(COLLAPSED);
 
+  // One more line segment per corner, separate from the squash-fold
+  // precrease creases in CREASE_LINE_INDEX above: Ctr to that corner's
+  // *surviving* layer's own crease point — the fold the collapse itself
+  // already made, between that layer's static and moving wedges. Shown
+  // as soon as the base finishes collapsing rather than gated behind a
+  // later "fold corner X" step, since there's nothing left to see happen
+  // for this one — the collapse already made it. Confirmed against real
+  // paper: this is the one mark a real, freshly-collapsed base actually
+  // shows there — no colored sliver of the hidden second layer needed
+  // (see the reverted attempt at that), just this fold line.
+  const BASE_FOLD_LINE_INDEX = {};
+  ['A','B','C','D'].forEach(X=>{
+    BASE_FOLD_LINE_INDEX[X] = LINE_PAIRS.length;
+    LINE_PAIRS.push('Ctr', X+'_'+PRIMARY_NEIGHBOR[X]+'_r');
+  });
+
   // The squash-fold precrease (every step after the collapse) is done
   // holding the base with its closed tip up and the 4 flaps hanging
   // below, meeting at the open merge point in the middle — confirmed
@@ -700,6 +716,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         linePositions[(start+k)*3]=c.x; linePositions[(start+k)*3+1]=c.y; linePositions[(start+k)*3+2]=c.z;
       }
     });
+    // Same collapse-to-nothing trick for the base's own fold line (see
+    // BASE_FOLD_LINE_INDEX above) — hidden until the base itself has
+    // finished collapsing, since before that Ctr and this crease point
+    // aren't a fold yet, just 2 ordinary points on the flat sheet.
+    if(stepIndex <= COLLAPSE_STEP_INDEX){
+      ['A','B','C','D'].forEach(X=>{
+        const start = BASE_FOLD_LINE_INDEX[X];
+        const c = frame.Ctr || FLAT.Ctr;
+        linePositions[start*3]=c.x; linePositions[start*3+1]=c.y; linePositions[start*3+2]=c.z;
+        linePositions[(start+1)*3]=c.x; linePositions[(start+1)*3+1]=c.y; linePositions[(start+1)*3+2]=c.z;
+      });
+    }
     lineGeo.attributes.position.needsUpdate = true;
   }
 
@@ -1172,7 +1200,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const isUnfold = step.type==='unfold';
       const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
       animateStep(foldStep, isUnfold, ()=>{
-        stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
+        stepIndex++; animating=false; setButtons(true);
+        // The last frame drawn during animateStep's own loop used the
+        // pre-increment stepIndex, so a reveal gated on stepIndex (e.g.
+        // BASE_FOLD_LINE_INDEX/CREASE_LINE_INDEX becoming visible once
+        // their step is done) wouldn't actually show until some later
+        // redraw. Re-apply the same settled frame now that stepIndex has
+        // moved on, so gating keyed to it takes effect immediately.
+        applyFrame(stateBeforeStep(stepIndex));
+        updatePanel(); resolve();
       });
     });
   }
