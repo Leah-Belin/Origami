@@ -830,11 +830,35 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // precrease-corner below for the geometry) — shared by that step and
   // unfold-all-corners, which runs the same hinge for all 4 corners at
   // once instead of one at a time.
+  //
+  // The hinge is the angle bisector at Ctr between Ctr→corner and
+  // Ctr→(this flap's neighbor) — and since N/E/S/W all collapse to the
+  // exact same physical merge point, every corner's bisector should aim
+  // at that one shared point, landing all 4 folded corners on the same
+  // line. Computing it via a *specific* layer's own crease-edge point
+  // (X+'_'+PRIMARY_NEIGHBOR[X]+'_r', on that corner's own N/E/S/W edge)
+  // doesn't hold that guarantee: each layer-specific N/E/S/W copy is only
+  // SETTLED's 98%-lerp away from FLAT — not the exact merge point — and
+  // each corner's copy carries a different 2% residual toward its own
+  // *different* FLAT-state neighbor (A/B's toward FLAT.N, C's toward
+  // FLAT.E, D's toward FLAT.W) — different enough, after reflecting
+  // across it, to send corners folding toward two different lines on
+  // opposite sides of the model instead of one shared line. Using the
+  // bare SETTLED.N — the same single point for all 4 corners, not a
+  // per-layer copy — for every corner's bisector removes that
+  // divergence at the source: whichever residual SETTLED.N itself
+  // carries is now shared identically by all 4, so they still land
+  // exactly together. (Any of SETTLED.N/E/S/W would do equally, being
+  // themselves already-converged copies of the same collapsed point —
+  // N is just a fixed, arbitrary pick.) The bisector direction itself is
+  // the sum of the two unit vectors from Ctr — a standard identity, and
+  // exactly the direction the old per-layer construction was aiming for.
   function foldedCorner(X, angleRad){
-    const creaseEdgePoint = SETTLED[X+'_'+PRIMARY_NEIGHBOR[X]+'_r'];
     const pivot = SETTLED.Ctr;
-    const axis = new THREE.Vector3().subVectors(creaseEdgePoint, pivot);
     const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
+    const toCorner = rel.clone().normalize();
+    const toMerge = new THREE.Vector3().subVectors(SETTLED.N, pivot).normalize();
+    const axis = new THREE.Vector3().addVectors(toCorner, toMerge);
     return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
   }
 
