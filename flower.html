@@ -589,9 +589,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const group = new THREE.Group();
   scene.add(group);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
-  const dir2 = new THREE.DirectionalLight(0xffffff, 0.35); dir2.position.set(-100,-50,-100); scene.add(dir2);
+  // Ambient-heavy on purpose: the 2 directional lights are fixed in world
+  // space, but the model itself rotates to bring each corner's fold to
+  // face the camera (see CORNER_FACING_ANGLE below) — so a folded flap's
+  // final orientation relative to those lights differs corner to corner,
+  // and strong directional lighting made an otherwise-identically-colored
+  // flap read anywhere from bright white to a dim, gray-looking white
+  // depending purely on which corner it belonged to (confirmed: same
+  // uFront color, same shape up to the expected rotation, different only
+  // in how much of the 2 fixed lights each one's final normal happened to
+  // catch). Leaning on ambient keeps every orientation close to its true
+  // color regardless of which way the model's been turned to face it,
+  // matching real paper under ordinary, non-dramatic room light — the two
+  // directional lights are kept only for enough shading to still read as
+  // 3D, not to drive the actual color.
+  scene.add(new THREE.AmbientLight(0xffffff, 1.1));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.35); dir1.position.set(100,150,100); scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.2); dir2.position.set(-100,-50,-100); scene.add(dir2);
 
   // Non-indexed: 8 panels x 3 vertices, none shared — lets each triangle
   // keep its own normal (and its own color) under flatShading instead of
@@ -918,12 +932,42 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // N is just a fixed, arbitrary pick.) The bisector direction itself is
   // the sum of the two unit vectors from Ctr — a standard identity, and
   // exactly the direction the old per-layer construction was aiming for.
-  function foldedCorner(X, angleRad){
+  // Which way this bisector axis points is only pinned down (by the
+  // addVectors identity above) up to sign — flipping it doesn't change
+  // where p=1 lands (a 180° rotation about an axis and about its negation
+  // are the same rotation), but it does flip which way the flap swings to
+  // get there. Left to the formula's natural sign, that swing direction
+  // isn't camera-consistent: rotating each corner's own initial swing
+  // into that corner's own CORNER_FACING_ANGLE view and checking it
+  // against the camera direction, A and C swing away from the viewer
+  // first (the crease stays hidden behind the flap as it lifts, matching
+  // real paper) while B and D swing toward the viewer first (the crease
+  // shows on the near face mid-swing). Same root cause as
+  // PRIMARY_NEIGHBOR's own asymmetry above: the bisector always aims at
+  // the one shared merge point (SETTLED.N), but the 4 corners sit 90°
+  // apart around it, so two are naturally "before" that direction and two
+  // "after". Computed once and negated only for the corners that need it,
+  // so every corner's fold swings away from its own viewer the same way
+  // A's already does.
+  const CAM_DIR = new THREE.Vector3(camera.position.x, 0, camera.position.z).normalize();
+  const FOLD_AXIS_SIGN = {};
+  ['A','B','C','D'].forEach(X=>{
     const pivot = SETTLED.Ctr;
     const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
     const toCorner = rel.clone().normalize();
     const toMerge = new THREE.Vector3().subVectors(SETTLED.N, pivot).normalize();
     const axis = new THREE.Vector3().addVectors(toCorner, toMerge);
+    const lift = new THREE.Vector3().crossVectors(axis, rel);
+    const liftInView = lift.applyAxisAngle(new THREE.Vector3(0,1,0), CORNER_FACING_ANGLE[X]);
+    FOLD_AXIS_SIGN[X] = liftInView.dot(CAM_DIR) > 0 ? -1 : 1;
+  });
+
+  function foldedCorner(X, angleRad){
+    const pivot = SETTLED.Ctr;
+    const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
+    const toCorner = rel.clone().normalize();
+    const toMerge = new THREE.Vector3().subVectors(SETTLED.N, pivot).normalize();
+    const axis = new THREE.Vector3().addVectors(toCorner, toMerge).multiplyScalar(FOLD_AXIS_SIGN[X]);
     return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
   }
 
