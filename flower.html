@@ -176,7 +176,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   <header>
     <h1>Flower base</h1>
   </header>
-  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, done on all 4 flaps at once (fold each loose corner down to the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
+  <p class="progress-note">In progress: this covers the <strong>preliminary base</strong> — same precrease as the waterbomb base, then a collapse with the opposite corners/edges swapped — plus the precrease for the squash fold, one flap at a time (fold its loose corner down to the bottom point, then unfold). Actually opening and pressing each flap flat along that crease — the move that turns it into a petal — is still to come.</p>
 
   <main>
     <div class="board">
@@ -188,7 +188,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 13</span>
+          <span class="step-count" id="stepCount">Step 1 of 19</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -278,18 +278,32 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     ['Ctr','mA','N'], ['mA','A','N'],
     ['Ctr','N','mB'], ['N','B','mB'],
     ['Ctr','mB','E'], ['mB','B','E'],
-    ['Ctr','mC','E'], ['mC','C','E'],
-    ['Ctr','S','mC'], ['S','C','mC'],
+    ['Ctr','E','mC'], ['E','C','mC'],
+    ['Ctr','mC','S'], ['mC','C','S'],
     ['Ctr','S','mD'], ['S','D','mD'],
     ['Ctr','mD','W'], ['mD','D','W'],
     ['Ctr','W','mA'], ['W','A','mA'],
   ];
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
-  // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim segments.
+  // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim
+  // segments, plus one crease segment per corner (mX to each of its 2
+  // neighbor merge-points — the actual hinge a corner's precrease folds
+  // along). The crease segments are always in the buffer, but applyFrame
+  // below collapses an unrevealed one down to a single point (Ctr) so it
+  // draws as nothing — each becomes visible only once that corner's own
+  // fold+unfold pair has run, so the line reads as "a crease left behind
+  // by a fold you've seen happen," not a mark on paper that's never bent.
+  const CREASE_NEIGHBORS = { A:['N','W'], B:['N','E'], C:['E','S'], D:['S','W'] };
   const LINE_PAIRS = [];
   OUTER.forEach(n=>LINE_PAIRS.push('Ctr',n));
   for(let i=0;i<OUTER.length;i++) LINE_PAIRS.push(OUTER[i], OUTER[(i+1)%OUTER.length]);
+  const CREASE_LINE_INDEX = {};
+  ['A','B','C','D'].forEach(X=>{
+    CREASE_LINE_INDEX[X] = LINE_PAIRS.length;
+    const [n1,n2] = CREASE_NEIGHBORS[X];
+    LINE_PAIRS.push('m'+X, n1, 'm'+X, n2);
+  });
 
   function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
     const axis = axisDir.clone().normalize();
@@ -366,9 +380,30 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'precrease-corners', instruction:'Fold all 4 flaps\' loose corners down to the bottom point — this creases each flap along the line it will later open and press flat.' },
-    { type:'unfold', instruction:'Unfold. Every flap now carries that crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
+    { type:'precrease-corner', corner:'A', instruction:'Fold flap A\'s loose corner down to the bottom point — this creases the flap along the line it will later open and press flat.' },
+    { type:'unfold', instruction:'Unfold. That\'s A\'s crease.' },
+    { type:'precrease-corner', corner:'B', instruction:'Same fold on flap B\'s corner.' },
+    { type:'unfold', instruction:'Unfold. B\'s crease.' },
+    { type:'precrease-corner', corner:'C', instruction:'Same fold on flap C\'s corner.' },
+    { type:'unfold', instruction:'Unfold. C\'s crease.' },
+    { type:'precrease-corner', corner:'D', instruction:'Same fold on flap D\'s corner — the last one.' },
+    { type:'unfold', instruction:'Unfold. Every flap now carries its own crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
   ];
+
+  // Index of each corner's own precrease-corner step, found by scanning
+  // once — used by applyFrame to know when that corner's crease line
+  // should start being drawn (see CREASE_LINE_INDEX above): revealed once
+  // stepIndex is past this (i.e. we've reached that corner's paired
+  // unfold step), so the line appears as the flap unfolds back flat.
+  const CORNER_FOLD_STEP_INDEX = {};
+  STEPS.forEach((s,i)=>{ if(s.type==='precrease-corner') CORNER_FOLD_STEP_INDEX[s.corner] = i; });
+
+  // Declared here (rather than down with the rest of the playback state)
+  // so it's already initialized by the time the initial applyFrame(FLAT)
+  // call below reads it — applyFrame is defined before the playback
+  // section but invoked immediately, and a `let` referenced before its
+  // own declaration line runs throws, even from a closure.
+  let stepIndex = 0;
 
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
@@ -450,6 +485,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     LINE_PAIRS.forEach((name,i)=>{
       const p = frame[name] || FLAT[name];
       linePositions[i*3]=p.x; linePositions[i*3+1]=p.y; linePositions[i*3+2]=p.z;
+    });
+    // Collapse any not-yet-revealed crease segment down to a single point
+    // (Ctr) so it draws as nothing — see CREASE_LINE_INDEX above.
+    ['A','B','C','D'].forEach(X=>{
+      if(stepIndex > CORNER_FOLD_STEP_INDEX[X]) return;
+      const start = CREASE_LINE_INDEX[X];
+      const c = frame.Ctr || FLAT.Ctr;
+      for(let k=0;k<4;k++){
+        linePositions[(start+k)*3]=c.x; linePositions[(start+k)*3+1]=c.y; linePositions[(start+k)*3+2]=c.z;
+      }
     });
     lineGeo.attributes.position.needsUpdate = true;
   }
@@ -579,7 +624,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   setPaperColor(savedColor || PAPER_COLORS[0].hex, false);
 
   // ---- Playback state ----
-  let stepIndex = 0, animating = false, playing = false;
+  let animating = false, playing = false;
 
   const el = {
     stepCount: document.getElementById('stepCount'),
@@ -616,25 +661,24 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       });
       return withMidpoints(out);
     }
-    if(step.type==='precrease-corners'){
-      // Each flap folds along its own crease (Ctr-corner's midpoint —
-      // see CORNER_FOLD_T above) at once: for corner X, that's a 180°
-      // hinge about the axis through mX and the shared merge point,
-      // which — since the merge point is the crease triangle's right-
-      // angle vertex, equidistant from both Ctr and X — lands X exactly
-      // on Ctr at p=1. Stops just short of that exact endpoint for the
-      // same reason the base collapse does: every corner lands exactly
-      // on Ctr, a genuine coincidence the depth test would otherwise
-      // have to break a tie on.
+    if(step.type==='precrease-corner'){
+      // This flap's corner folds along its own crease (Ctr-corner's
+      // midpoint — see CORNER_FOLD_T above): a 180° hinge about the axis
+      // through mX and the shared merge point, which — since the merge
+      // point is the crease triangle's right-angle vertex, equidistant
+      // from both Ctr and X — lands X exactly on Ctr at p=1. Stops just
+      // short of that exact endpoint for the same reason the base
+      // collapse does: the corner lands exactly on Ctr, a genuine
+      // coincidence the depth test would otherwise have to break a tie
+      // on. Every other corner stays put — this is one flap at a time.
       const pc = Math.min(p, 0.98);
       const angleRad = pc * Math.PI;
+      const X = step.corner;
+      const mid = COLLAPSED['m'+X];
+      const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
+      const rel = new THREE.Vector3().subVectors(COLLAPSED[X], mid);
       const out = Object.assign({}, COLLAPSED);
-      ['A','B','C','D'].forEach(X=>{
-        const mid = COLLAPSED['m'+X];
-        const axis = new THREE.Vector3().subVectors(MERGE_PT, mid);
-        const rel = new THREE.Vector3().subVectors(COLLAPSED[X], mid);
-        out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(mid);
-      });
+      out[X] = rotateAroundAxisAtOrigin(rel, axis, angleRad).add(mid);
       return out;
     }
     if(step.type==='flip'){
@@ -731,9 +775,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
-      } else if(step.type==='precrease-corners'){
+      } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
-        el.stageCaption.textContent='each flap folding its own corner down to the bottom point';
+        el.stageCaption.textContent=`flap ${step.corner} folding its corner down to the bottom point`;
       } else {
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent='hinge rotation about the crease line, through center';
