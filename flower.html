@@ -601,26 +601,44 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const positions = new Float32Array(vertCount * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  // gl_FrontFacing alone answers "which side of this triangle faces the
-  // camera *right now*" — in principle exactly what a folding flap needs,
-  // since which side it shows genuinely depends on how far it's swung.
-  // But it turns out unreliable for this particular base once collapsed:
-  // checked directly (bypassing aForce) against a flap's own moving
-  // panel at the very start of its fold, angleRad≈0 — still exactly
-  // coplanar with its own static neighbor, which is pinned to uBack —
-  // gl_FrontFacing disagreed with that neighbor immediately, before any
-  // real rotation had happened at all. Two triangles sharing a plane and
-  // a consistent winding can't actually disagree, so this isn't the
-  // camera legitimately catching a flap edge-on mid-swing (a real,
-  // later-verified case elsewhere in this app) — gl_FrontFacing itself
-  // reads backwards for this geometry from this camera. So aForce pins
-  // *every* panel once collapsed, moving ones included, all the way
-  // through their own fold — not just the static rest of the base: 1
-  // pins a vertex's triangle to uBack outright, 0 falls back to
-  // gl_FrontFacing (still what every pre-collapse fold step uses, where
-  // it's been confirmed reliable).
+  // gl_FrontFacing answers "which side of this triangle faces the camera
+  // *right now*" — exactly right for a flap that's actively, physically
+  // mid-swing (its true visible side really is changing frame to frame),
+  // but wrong for anything at rest: a panel that's holding still has one
+  // fixed, already-confirmed true color, and gl_FrontFacing's answer for
+  // it necessarily still swings with the *camera's* orbit — for a flat
+  // panel that isn't a full dome around the viewer, roughly half of any
+  // full orbit sees its far side. Verified directly (bypassing aForce):
+  // sweeping the camera through a full turn around the settled, collapsed
+  // base, a panel that's confirmed to always show uBack (red) reads
+  // correctly for about half the sweep and flips to the wrong answer for
+  // the other half — not an edge-on sliver, a wide, wrong-colored arc.
+  // So gl_FrontFacing is only trusted for a panel currently mid-fold, kept
+  // camera-facing all the while by CORNER_FACING_ANGLE; every panel at
+  // rest is pinned instead: 1 pins to uBack (red, confirmed the resting
+  // exterior color), -1 pins to uFront (white — a corner's own moving
+  // panel earns this once ITS fold finishes: the reveal really did
+  // happen, and pinning it keeps that reveal correct from every orbit
+  // angle afterward, exactly like the never-folded rest of the base), 0
+  // falls back to gl_FrontFacing.
   const aForce = new Float32Array(vertCount);
   geometry.setAttribute('aForce', new THREE.BufferAttribute(aForce, 1));
+
+  // Each corner's own moving wedge (Ctr, corner, crease-tip) — the one
+  // panel per corner that's ever genuinely mid-swing — found by panel
+  // index so setForceColor below can single it out instead of forcing
+  // every panel uniformly. The layer's *static* wedge (same crease-tip,
+  // but the neighbor copy instead of the corner itself) never moves, so
+  // it isn't tracked here — it's just part of the ordinary forced-red
+  // rest of the base, before and after this corner's own fold alike.
+  const CORNER_MOVING_PANEL = {};
+  const CORNER_MOVING_PANEL_OWNER = {};
+  ['A','B','C','D'].forEach(X=>{
+    const tip = X+'_'+PRIMARY_NEIGHBOR[X]+'_r';
+    const pi = PANELS.findIndex(tri => tri.includes(X) && tri.includes(tip));
+    CORNER_MOVING_PANEL[X] = pi;
+    CORNER_MOVING_PANEL_OWNER[pi] = X;
+  });
 
   // True two-sided paper: gl_FrontFacing asks, per pixel, which side of
   // the triangle currently faces the camera, so front/back color is
@@ -646,7 +664,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     shader.fragmentShader = 'uniform vec3 uFront;\nuniform vec3 uBack;\nvarying float vForce;\n' + shader.fragmentShader.replace(
       '#include <color_fragment>',
       `#include <color_fragment>
-      diffuseColor.rgb = (vForce > 0.5) ? uBack : (gl_FrontFacing ? uFront : uBack);`
+      diffuseColor.rgb = (vForce > 0.5) ? uBack : (vForce < -0.5) ? uFront : (gl_FrontFacing ? uFront : uBack);`
     );
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
@@ -688,11 +706,25 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     lineGeo.attributes.position.needsUpdate = true;
   }
 
-  // See aForce above: once pastCollapse, every panel (including whichever
-  // corner is actively mid-fold) is pinned to uBack.
-  function setForceColor(pastCollapse){
-    const force = pastCollapse ? 1 : 0;
-    aForce.fill(force);
+  // See aForce/CORNER_MOVING_PANEL above. `folded` are corners whose own
+  // fold has already completed and is being held (pinned to uFront, the
+  // reveal); `active` are corners genuinely mid-swing right now (left at
+  // 0, dynamic). Everything else — pre-collapse, or past collapse but
+  // neither folded nor active — is pinned to uBack.
+  function setForceColor(pastCollapse, folded, active){
+    const foldedSet = new Set(folded || []);
+    const activeSet = new Set(active || []);
+    let vi = 0;
+    PANELS.forEach((tri, pi)=>{
+      let force = pastCollapse ? 1 : 0;
+      const owner = CORNER_MOVING_PANEL_OWNER[pi];
+      if(owner){
+        if(activeSet.has(owner)) force = 0;
+        else if(foldedSet.has(owner)) force = -1;
+      }
+      aForce[vi]=force; aForce[vi+1]=force; aForce[vi+2]=force;
+      vi += 3;
+    });
     geometry.attributes.aForce.needsUpdate = true;
   }
 
@@ -1024,13 +1056,29 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       baseRotationY = toRotY;
       userRotating = true;
     }
-    // Color follows aForce above: every step past the collapse is pinned
-    // throughout, corner actively folding included. The collapse step
-    // itself is the one exception — its own progressive reveal (FLAT
-    // gathering into the 3D pose) is confirmed correct dynamically, so it
-    // only pins once settled (t>=1), same as before.
+    // Color follows aForce/setForceColor above. The collapse step's own
+    // progressive reveal (FLAT gathering into the 3D pose) is confirmed
+    // correct dynamically, so it only pins once settled (t>=1). Past the
+    // collapse, whichever corner this step is actively swinging is left
+    // dynamic while mid-swing (unfold-all-corners swings all 4 at once);
+    // any corner already folded by an earlier step (see
+    // priorFoldedCorners) stays pinned to its reveal throughout — except
+    // during unfold-all-corners itself, which is un-revealing every one
+    // of them right now. Once truly settled (t>=1, not just this frame's
+    // eased p==1 — the very end of the animation), nothing stays dynamic:
+    // this step's own corner(s) join or leave the folded set instead, so
+    // the reveal (or its absence) holds correctly from every orbit angle
+    // afterward, the same way jumpToStep's static landing state does.
+    const activeWhileSwinging = step.type==='precrease-corner' ? [step.corner]
+      : step.type==='unfold-all-corners' ? ['A','B','C','D'] : [];
+    const foldedBefore = (idx > COLLAPSE_STEP_INDEX && step.type!=='unfold-all-corners')
+      ? priorFoldedCorners(step) : [];
+    const foldedAfter = step.type==='unfold-all-corners' ? []
+      : step.type==='precrease-corner' ? foldedBefore.concat(step.corner) : foldedBefore;
     function updateColor(settled){
-      setForceColor(idx === COLLAPSE_STEP_INDEX ? settled : idx > COLLAPSE_STEP_INDEX);
+      if(idx === COLLAPSE_STEP_INDEX){ setForceColor(settled, [], []); return; }
+      if(!settled){ setForceColor(idx > COLLAPSE_STEP_INDEX, foldedBefore, activeWhileSwinging); return; }
+      setForceColor(idx > COLLAPSE_STEP_INDEX, foldedAfter, []);
     }
     updateColor(false);
 
@@ -1150,7 +1198,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     baseRotationY = (upcoming && upcoming.type==='precrease-corner') ? CORNER_FACING_ANGLE[upcoming.corner] : 0;
     userRotating = false;
     group.rotation.set(0, baseRotationY, 0);
-    setForceColor(n > COLLAPSE_STEP_INDEX);
+    // Static landing state (nothing animating): whichever corners were
+    // folded by an earlier step are shown pinned to their reveal, same as
+    // updateColor's `folded` in animateStep above — including all 4 right
+    // before unfold-all-corners itself runs, since none of them have
+    // un-revealed yet at that point.
+    const landingFolded = n > COLLAPSE_STEP_INDEX && n < STEPS.length ? priorFoldedCorners(STEPS[n]) : [];
+    setForceColor(n > COLLAPSE_STEP_INDEX, landingFolded, []);
     applyFrame(stateBeforeStep(n));
     updatePanel();
   }
