@@ -130,6 +130,14 @@ Consequences of folding by the full 180°:
    existing paper, insert it above (valley) or below (mountain) the
    existing stack at that point.
 
+**Caveat that matters a lot in practice**: rule 2 is stated for a
+single ply of paper. Once earlier folds have already stacked multiple
+plies on top of each other, a later fold that moves the *whole stack*
+as one rigid unit (crease through all plies at once, no separating
+them first) flips the stack's two *exterior* faces, not "the" face of
+some single ply inside it — see §6, where this distinction is the
+whole answer.
+
 ## 5. Worked example: a single diagonal precrease fold
 
 Fold corner 8 down onto corner 4 (a standard preliminary-base
@@ -145,40 +153,60 @@ triangle's visible face is now **White** (it flipped 180°), sitting
 folding colored kami paper — a valley-folded flap shows its white
 crease on top.
 
-## 6. Open discrepancy to resolve: the corner-fold face flip
+## 6. Resolved: why the corner-fold wedge stays colored
 
-Running the same reasoning on flower.html's `precrease-corner` step
-(fold corner A's loose tip down past the merge point — a single-hinge
-180° fold of just the moving wedge) predicts the same thing: before
-this fold the wedge shows Color (matching every other panel at that
-stage), and a 180° fold should flip its outward face to White.
+Checked against the physical model: folding a corner's loose tip down
+partway, the moving wedge **stays colored** — it does not show white.
+flower.html's `aForce` behavior (forcing `uBack`/Color universally,
+including on the actively-folding corner) was right; §4's naive
+single-ply flip rule was the thing that was wrong here, for the reason
+the caveat in §4 flags.
 
-flower.html's code currently disagrees on purpose — `aForce` forces
-every panel to `uBack` (Color) universally past collapse, *including*
-whichever corner is actively folding, with a comment claiming this was
-"confirmed against real paper." Given this session's peek-line
-saga (three rounds of "not it" before landing on the right geometry
-*and* the right visible side), I'd like an actual paper check before
-trusting either side of this: fold one corner of the physical model
-partway and look at the wedge that's moving mid-fold — does its
-outward face read as still-colored, or does it show white partway
-through the fold?
+The resolution is the standard preliminary-base construction itself.
+Per flower.html's own comments, the sheet is turned over between the
+horizontal/vertical creases and the diagonal ones specifically so
+every crease is an easy valley fold instead of forcing two of the four
+to be the harder-to-see mountain kind — and the well-known side effect
+of that turn-over trick is that **every flap of the collapsed base
+ends up 2 plies thick, White-to-White, Color-out on both exterior
+faces.** Nothing patchwork about it: the whole base reads as one
+uniform color from outside no matter which flap or which of its 2
+layers you're looking at, on purpose, by construction.
 
-If it does flip to white, the current blanket `aForce=1` is a
-simplification papering over a real color change (pun intended), and
-letting `aForce` follow real front/back facing for the actively-folding
-corner specifically (while keeping the rest of the base pinned, per
-the existing comment about avoiding a wide wrong-colored-arc glitch
-elsewhere) would make the render match the model above.
+The `precrease-corner` step folds a flap's loose *tip*, without
+separating its 2 plies first — a crease straight through both layers
+at once, the whole flap moving as one rigid 2-ply unit (the "actually
+opening and pressing each flap flat" move that *does* separate the
+plies is later, the squash fold itself). Per the §4 caveat, what flips
+is the *stack's* two exterior faces — and since this stack already
+reads Color on both exterior faces before the fold (by the paragraph
+above), flipping it exposes the *other* exterior face, which is also
+Color. Same color both before and after, not because nothing moved,
+but because a symmetric stack's mirror image is still symmetric.
+
+This is a real, general modeling point, not a one-off fix: **whether
+a fold changes the visible color depends on the full ply structure at
+that point, not just "did something rotate 180°."** A model that only
+tracks single-ply orientation (§4's naive version) gets this specific,
+very common case backwards. Concretely: it's the difference between
+folding a *flap's tip* (plies move together, color unchanged here) and
+*opening and pressing a flap flat* (plies separate, and that's where
+this model would predict white legitimately showing — worth checking
+against real paper specifically when that squash-fold step is built).
 
 ## 7. Next steps
 
-- Confirm §6 against the physical model.
-- Once confirmed, decide whether to extend this model far enough to
-  formally re-derive the collapse step itself (four creases folding
-  simultaneously, plus the turn-over the code's comments mention) —
-  that's a harder, multi-crease layer-ordering problem, worth scoping
-  separately rather than folding into this doc.
+- Extend §4/§6's ply-stack accounting into a proper primitive: a point
+  should carry a *stack* of plies (each with its own Color/White
+  orientation), not just one face. A fold either moves an entire local
+  stack together (§6 case) or explicitly separates plies within it (a
+  squash/petal fold) — worth modeling both as distinct operations
+  before flower.html's actual squash fold gets built, and checking the
+  prediction against real paper before writing any render code for it.
+- Decide whether to extend this model far enough to formally re-derive
+  the collapse step itself (four creases folding simultaneously, plus
+  the turn-over) — a harder, multi-crease layer-ordering problem,
+  worth scoping separately rather than folding into this doc.
 - If this model holds up, the natural next step is a small
   Three.js-independent module (pure functions over point labels) that
   can answer "what face shows at point X after fold sequence Y," which
