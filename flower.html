@@ -752,7 +752,60 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   peekEdgeLines.renderOrder = 1;
   group.add(peekEdgeLines);
 
+  let currentFrame = null;
+
+  // True when the camera is looking at triangle (Ctr,p1,p2) — in that
+  // winding order — from its back side, the same test gl_FrontFacing
+  // makes pre-collapse. Used to keep PEEK_EDGE_PAIRS showing only on
+  // the side where the hidden layer would actually be exposed —
+  // confirmed against a real folded model: turn the paper over to see
+  // it, it isn't visible looking at the paper's normal outward face.
+  function isBackSide(Ctr, p1, p2){
+    const v1 = new THREE.Vector3().subVectors(p1, Ctr);
+    const v2 = new THREE.Vector3().subVectors(p2, Ctr);
+    const normal = new THREE.Vector3().crossVectors(v1, v2).transformDirection(group.matrixWorld);
+    const worldCtr = Ctr.clone().applyMatrix4(group.matrixWorld);
+    const toCam = camera.position.clone().sub(worldCtr);
+    return normal.dot(toCam) > 0;
+  }
+
+  // Re-run every render frame (not just on applyFrame, which only fires
+  // on a step change) since which side is the "back" depends on the
+  // live camera angle — the ambient sway and manual drag both change it
+  // continuously between steps. Reuses the same collapse-to-a-point
+  // hiding trick as the step-gated lines above; which point doesn't
+  // matter for a zero-length segment.
+  function updatePeekEdgeVisibility(){
+    if(!currentFrame) return;
+    const frame = currentFrame;
+    const Ctr = frame.Ctr || FLAT.Ctr;
+    ['A','B','C','D'].forEach(X=>{
+      const start = PEEK_EDGE_INDEX[X];
+      const primary = PRIMARY_NEIGHBOR[X];
+      const cornerPt = frame[X] || FLAT[X];
+      const creaseTip = frame[X+'_'+primary+'_r'] || FLAT[X+'_'+primary+'_r'];
+      const neighborPt = frame[X+'_'+primary] || FLAT[X+'_'+primary];
+      // One shared decision for both segments, off the static wedge
+      // (Ctr,creaseTip,neighborPt) — unlike the moving wedge, it never
+      // flips orientation when this corner folds, so it's a stable
+      // "which side" reference no matter the animation state. Using
+      // each wedge's own normal instead (as first tried) made the two
+      // segments flip back/front at different camera angles, so only
+      // one ever showed at a time instead of the matching pair a real
+      // folded flap's back actually shows together.
+      const show = stepIndex > COLLAPSE_STEP_INDEX && isBackSide(Ctr, creaseTip, neighborPt);
+      const p0 = show ? creaseTip : Ctr, p1 = show ? cornerPt : Ctr;
+      const p2 = show ? creaseTip : Ctr, p3 = show ? neighborPt : Ctr;
+      peekEdgePositions[start*3]=p0.x; peekEdgePositions[start*3+1]=p0.y; peekEdgePositions[start*3+2]=p0.z;
+      peekEdgePositions[(start+1)*3]=p1.x; peekEdgePositions[(start+1)*3+1]=p1.y; peekEdgePositions[(start+1)*3+2]=p1.z;
+      peekEdgePositions[(start+2)*3]=p2.x; peekEdgePositions[(start+2)*3+1]=p2.y; peekEdgePositions[(start+2)*3+2]=p2.z;
+      peekEdgePositions[(start+3)*3]=p3.x; peekEdgePositions[(start+3)*3+1]=p3.y; peekEdgePositions[(start+3)*3+2]=p3.z;
+    });
+    peekEdgeGeo.attributes.position.needsUpdate = true;
+  }
+
   function applyFrame(frame){
+    currentFrame = frame;
     let vi = 0;
     PANELS.forEach(tri=>{
       tri.forEach(name=>{
@@ -792,24 +845,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     }
     lineGeo.attributes.position.needsUpdate = true;
 
-    PEEK_EDGE_PAIRS.forEach((name,i)=>{
-      const p = frame[name] || FLAT[name];
-      peekEdgePositions[i*3]=p.x; peekEdgePositions[i*3+1]=p.y; peekEdgePositions[i*3+2]=p.z;
-    });
-    // Same collapse-to-a-point hiding as BASE_FOLD_LINE_INDEX above —
-    // nothing to peek before the base has collapsed. 4 points per corner
-    // now (2 segments — see PEEK_EDGE_PAIRS above), all collapsed the
-    // same way.
-    if(stepIndex <= COLLAPSE_STEP_INDEX){
-      ['A','B','C','D'].forEach(X=>{
-        const start = PEEK_EDGE_INDEX[X];
-        const c = frame.Ctr || FLAT.Ctr;
-        for(let k=0;k<4;k++){
-          peekEdgePositions[(start+k)*3]=c.x; peekEdgePositions[(start+k)*3+1]=c.y; peekEdgePositions[(start+k)*3+2]=c.z;
-        }
-      });
-    }
-    peekEdgeGeo.attributes.position.needsUpdate = true;
+    updatePeekEdgeVisibility();
   }
 
   // See aForce above: once pastCollapse, every panel (including whichever
@@ -916,6 +952,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         group.rotation.y = baseRotationY;
       }
     }
+    // Which side is the "back" (see isBackSide above) depends on the
+    // live camera angle, which the ambient sway and manual drag both
+    // change continuously between steps — not just on the applyFrame
+    // calls that fire on a step change.
+    group.updateMatrixWorld(true);
+    updatePeekEdgeVisibility();
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
