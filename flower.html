@@ -754,11 +754,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   let currentFrame = null;
 
-  // True once the model has been rotated roughly to the opposite side
-  // from where corner X is normally shown (CORNER_FACING_ANGLE[X]) —
-  // used to keep PEEK_EDGE_PAIRS showing only on the back of a folded
-  // flap, matching a real paper model: turn it over to see it, it
-  // isn't visible looking at the normal outward face.
+  // True once the model has been rotated most of the way around from
+  // where corner X is normally shown (CORNER_FACING_ANGLE[X]) — used to
+  // keep PEEK_EDGE_PAIRS showing only on the back of a folded flap,
+  // matching a real paper model: turn it over to see it, it isn't
+  // visible looking at the normal outward face.
   //
   // First attempt used a 3D plane-normal test instead (is the camera on
   // the far side of the static wedge's own plane, Ctr-creaseTip-
@@ -767,20 +767,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // at CORNER_FACING_ANGLE itself (measured: ~1° off dead-on edge-on,
   // for every corner) — a coincidence of this crease pattern's
   // geometry, not a bug in the test, but it put the front/back flip
-  // exactly where a real user is looking by default. A per-corner sign
-  // correction (mirroring FOLD_AXIS_SIGN's own chirality split further
-  // down) couldn't fix that: flipping which side reads as "back" doesn't
-  // move the flip point away from the default angle, so any small sway
-  // or drag still crossed it — exactly the "corner A not showing / D on
-  // the wrong side" flakiness reported. A plain rotation-angle distance
-  // from that corner's own default facing angle doesn't have this
-  // problem: its own flip point sits a full 90° from the default by
-  // construction, nowhere near where anyone's actually looking at rest.
+  // exactly where a real user is looking by default, so any small sway
+  // or drag crossed it.
+  //
+  // Second attempt used a plain >90° rotation-angle distance from that
+  // corner's own default facing angle — still wrong, for a related
+  // reason: CORNER_FACING_ANGLE for the 4 corners sits exactly 90°
+  // apart from each other by construction (confirmed: 86°/176°/266°/
+  // 356°). So the instant you fold a *second* corner, the camera sits
+  // squarely on an adjacent corner's own default angle — exactly 90°
+  // from the first corner's facing angle too, right back on that
+  // corner's flip point, and the first corner's line lit up again on
+  // what should still read as its front (reported as "still showing on
+  // the front"). 135° instead of 90° clears every adjacent corner's own
+  // facing angle with room to spare — those stay a safe 90° away, well
+  // inside the hidden zone — while still catching a real turn toward
+  // this corner's actual back (180° away).
   function isBackSide(X){
     const facing = CORNER_FACING_ANGLE[X];
     let diff = Math.abs(group.rotation.y - facing) % (2*Math.PI);
     if(diff > Math.PI) diff = 2*Math.PI - diff;
-    return diff > Math.PI/2;
+    return diff > Math.PI*0.75;
   }
 
   // Re-run every render frame (not just on applyFrame, which only fires
@@ -803,8 +810,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // an earlier per-wedge version made the two segments flip
       // back/front at different camera angles, so only one ever showed
       // at a time instead of the matching pair a real folded flap's
-      // back actually shows together.
-      const show = stepIndex > COLLAPSE_STEP_INDEX && isBackSide(X);
+      // back actually shows together. Also gated on this specific
+      // corner having actually been folded (matching CORNER_FOLD_
+      // STEP_INDEX's use for CREASE_LINE_INDEX above) — found via the
+      // opposite corner's own facing angle landing this corner's own
+      // isBackSide on the "shown" side (they're all 90° apart — see
+      // isBackSide above): without this, folding corner A also lit up
+      // corner C's peek line, even though C's own flap hadn't been
+      // folded down at all yet.
+      const show = stepIndex > COLLAPSE_STEP_INDEX && stepIndex > CORNER_FOLD_STEP_INDEX[X] && isBackSide(X);
       const p0 = show ? creaseTip : Ctr, p1 = show ? cornerPt : Ctr;
       const p2 = show ? creaseTip : Ctr, p3 = show ? neighborPt : Ctr;
       peekEdgePositions[start*3]=p0.x; peekEdgePositions[start*3+1]=p0.y; peekEdgePositions[start*3+2]=p0.z;
