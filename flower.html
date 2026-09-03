@@ -603,6 +603,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // section but invoked immediately, and a `let` referenced before its
   // own declaration line runs throws, even from a closure.
   let stepIndex = 0;
+  // Same reason, same early declaration: which corner's own
+  // CORNER_FACING_ANGLE baseRotationY currently sits at, when it got
+  // there by the automatic "face the corner about to fold" navigation
+  // (see animateStep/jumpToStep below) — null once the viewer has taken
+  // over (a real drag) or the view has no particular corner in mind (the
+  // free/reset angle 0). Two corners' own facing angles can be up to
+  // 180° apart (e.g. D's own front sits exactly opposite B's), so
+  // turning to face one corner can land squarely on an already-folded
+  // other corner's back — used by updatePeekEdgeVisibility below to keep
+  // that other corner's own peek from popping up as a seeming
+  // non-sequitur during navigation the viewer didn't ask for; a real
+  // drag (or the free/reset angle) always shows every folded corner's
+  // true state.
+  let peekFocusCorner = null;
 
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
@@ -820,9 +834,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // is running): past that point the corner isn't folded down any
       // more, so cornerPt no longer traces a real crease — left ungated,
       // it kept using that once-folded position clear through to "Done",
-      // stretched out across the reopened flap.
+      // stretched out across the reopened flap. And collapsed for every
+      // corner but the one the automatic navigation is currently facing
+      // (peekFocusCorner) — two corners' own facing angles can be a full
+      // 180° apart (e.g. D's own front sits exactly opposite B's), so
+      // turning to show corner B's fold face-on can otherwise land
+      // squarely on corner D's back, popping its own peek into view for
+      // a reason that has nothing to do with what's on screen. A real
+      // drag clears peekFocusCorner, so every folded corner's true
+      // gl_FrontFacing state is always reachable by looking.
       if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X] ||
-         (UNFOLD_ALL_CORNERS_STEP_INDEX >= 0 && stepIndex >= UNFOLD_ALL_CORNERS_STEP_INDEX)){
+         (UNFOLD_ALL_CORNERS_STEP_INDEX >= 0 && stepIndex >= UNFOLD_ALL_CORNERS_STEP_INDEX) ||
+         (peekFocusCorner !== null && peekFocusCorner !== X)){
         for(let i=0;i<12;i++){
           const idx = (quadBase+i)*3;
           peekRibbonPositions[idx]=Ctr.x; peekRibbonPositions[idx+1]=Ctr.y; peekRibbonPositions[idx+2]=Ctr.z;
@@ -947,6 +970,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // Threshold just crossed: this is a real drag, not a stray tap.
       dragging = true;
       userRotating = true;
+      // The viewer is driving now — every folded corner's peek should
+      // show its true gl_FrontFacing state again, not stay suppressed
+      // for whichever corner the automatic navigation was last facing.
+      peekFocusCorner = null;
+      updatePeekEdgeVisibility();
       stageEl.classList.add('grabbing');
       hideDragHint();
       lastX = e.clientX; lastY = e.clientY;
@@ -977,6 +1005,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     else return;
     e.preventDefault();
     if(!userRotating){ userRotating = true; hideDragHint(); }
+    if(peekFocusCorner !== null){ peekFocusCorner = null; updatePeekEdgeVisibility(); }
     group.rotation.y += dy;
     group.rotation.x += dx;
   });
@@ -1256,6 +1285,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(step.type==='precrease-corner'){
       baseRotationY = toRotY;
       userRotating = true;
+      peekFocusCorner = step.corner;
     }
     // Color follows aForce above: every step past the collapse is pinned
     // throughout, corner actively folding included. The collapse step
@@ -1371,6 +1401,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   function reset(){
     stepIndex = 0; animating = false;
     baseRotationY = 0; userRotating = false; group.rotation.set(0, 0, 0);
+    peekFocusCorner = null;
     setForceColor(false);
     applyFrame(FLAT);
     updatePanel();
@@ -1389,6 +1420,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     // CORNER_FACING_ANGLE above.
     const upcoming = STEPS[n];
     baseRotationY = (upcoming && upcoming.type==='precrease-corner') ? CORNER_FACING_ANGLE[upcoming.corner] : 0;
+    peekFocusCorner = (upcoming && upcoming.type==='precrease-corner') ? upcoming.corner : null;
     userRotating = false;
     group.rotation.set(0, baseRotationY, 0);
     setForceColor(n > COLLAPSE_STEP_INDEX);
