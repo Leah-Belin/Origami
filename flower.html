@@ -481,22 +481,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // (crease-point to X_primary) is the one edge of this shape that
   // isn't drawn anywhere yet. Without it, this whole shape reads as one
   // straight line (Ctr through the crease point to X), not the 2
-  // triangles a real model actually shows there. Both of this shape's
-  // non-shared legs are collected here rather than folded into the dark
-  // CREASE_LINE_INDEX/rim overlay above, because each sits exactly on
-  // top of the surviving layer's own outer silhouette or rim edge — the
-  // same dark, semi-transparent color drawn there would just retrace a
-  // line that's already visible for free (or lose a depth-test tie
-  // against the paper mesh outright, confirmed against a real render).
-  // Drawn instead in the paper's own back color further down, so this
-  // reads as the hidden layer's own crease pattern peeking through.
-  const PEEK_EDGE_PAIRS = [];
-  const PEEK_EDGE_INDEX = {};
-  ['A','B','C','D'].forEach(X=>{
-    PEEK_EDGE_INDEX[X] = PEEK_EDGE_PAIRS.length;
-    PEEK_EDGE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X);
-    PEEK_EDGE_PAIRS.push(X+'_'+PRIMARY_NEIGHBOR[X]+'_r', X+'_'+PRIMARY_NEIGHBOR[X]);
-  });
+  // triangles a real model actually shows there. Neither of this
+  // shape's non-shared legs (crease-point–X and crease-point–X_primary)
+  // is folded into the dark CREASE_LINE_INDEX/rim overlay above,
+  // because each sits exactly on top of the surviving layer's own outer
+  // silhouette or rim edge — the same dark, semi-transparent color
+  // drawn there would just retrace a line that's already visible for
+  // free. Built as an actual ribbon mesh further down (see
+  // updatePeekEdgeVisibility) rather than a line, since what's really
+  // there is a genuine second layer of paper, not a 1D mark.
 
   // The squash-fold precrease (every step after the collapse) is done
   // holding the base with its closed tip up and the 4 flaps hanging
@@ -727,106 +720,112 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
-  // See PEEK_EDGE_PAIRS above — drawn in the paper's own back color
-  // (WHITE, the same fixed uFront used for the hidden side everywhere
-  // else) rather than the dark overlay color the rest of these lines
-  // use, specifically so it reads as that hidden layer's own edge
-  // peeking through instead of blending into the silhouette it runs
-  // along.
-  // The paperMesh polygonOffset above settles this line's depth-test tie
-  // against the paper surface it runs along, but `lines` above (the dark
-  // rim/crease overlay) is transparent and this segment overlaps part of
-  // that overlay's own (B, E)-style rim segment exactly (X_primary_r
-  // lies ON the straight line from X to its neighbor) — transparent
-  // objects always draw after every opaque one, so without a higher
-  // renderOrder than `lines`, that dark overlay would still paint its
-  // 40%-opacity black right back over this white line, dimming it back
-  // toward invisible. Marked transparent (opacity 1, so still visually
-  // solid) purely to land in that same later render pass, ordered after
-  // `lines` so it paints on top instead of under.
-  const peekEdgePositions = new Float32Array(PEEK_EDGE_PAIRS.length * 3);
-  const peekEdgeGeo = new THREE.BufferGeometry();
-  peekEdgeGeo.setAttribute('position', new THREE.BufferAttribute(peekEdgePositions, 3));
-  const peekEdgeMat = new THREE.LineBasicMaterial({ color: new THREE.Color(...WHITE), transparent:true, opacity:1 });
-  const peekEdgeLines = new THREE.LineSegments(peekEdgeGeo, peekEdgeMat);
-  peekEdgeLines.renderOrder = 1;
-  group.add(peekEdgeLines);
+  // See PEEK_EDGE_PAIRS above — drawn as an actual thin ribbon *mesh*
+  // for each of those 2 edges, not a line: real paper is a genuine
+  // second layer with two sides, and which side is showing at any
+  // point is a property of that layer's own geometry versus the
+  // viewer, not of "which way the camera happens to be rotated" — so
+  // it's rendered with the exact same test the paper's own shading
+  // already relies on (gl_FrontFacing — see paperMat below) instead of
+  // reimplementing that test as a camera-angle heuristic. Confirmed
+  // the heuristic version unreliable three separate ways this session:
+  // the wedge's own plane sits edge-on to the camera exactly at each
+  // corner's default view; the 4 corners' default views are exactly
+  // 90° apart, so any correction for one miscalibrated an adjacent
+  // corner; and even once both of those were patched around, the
+  // remaining reveal arc only kicked in once the model was turned
+  // almost all the way around, because pushing the threshold out to
+  // dodge the 90°-spacing problem narrowed it that much. A real
+  // gl_FrontFacing test has none of these problems — it's simply
+  // correct from any angle, by construction, the same way it already
+  // is for the rest of the paper.
+  //
+  // Each edge is a thin quad (not a 0-width line) — two triangles
+  // spanning the segment, offset a small fixed width to either side
+  // within the wedge's own plane (Ctr, creaseTip, neighbor — the same
+  // plane both PEEK_EDGE_PAIRS segments live in) so the quad's own
+  // winding, and therefore its own front/back sense, matches the
+  // paper mesh's own PANELS winding for that same wedge.
+  const PEEK_RIBBON_HALF_WIDTH = 0.7;
+  const peekRibbonPositions = new Float32Array(['A','B','C','D'].length * 2 * 6 * 3);
+  const peekRibbonGeo = new THREE.BufferGeometry();
+  peekRibbonGeo.setAttribute('position', new THREE.BufferAttribute(peekRibbonPositions, 3));
+  // side:DoubleSide so gl_FrontFacing is evaluated per fragment from
+  // both directions rather than culling the back face outright — the
+  // whole point is to distinguish, not discard, the back.
+  const peekRibbonMat = new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    transparent: true,
+    vertexShader: `
+      void main(){
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      void main(){
+        if(gl_FrontFacing) discard;
+        gl_FragColor = vec4(${WHITE[0]}, ${WHITE[1]}, ${WHITE[2]}, 1.0);
+      }
+    `
+  });
+  const peekRibbonMesh = new THREE.Mesh(peekRibbonGeo, peekRibbonMat);
+  peekRibbonMesh.renderOrder = 1;
+  group.add(peekRibbonMesh);
 
   let currentFrame = null;
 
-  // True once the model has been rotated most of the way around from
-  // where corner X is normally shown (CORNER_FACING_ANGLE[X]) — used to
-  // keep PEEK_EDGE_PAIRS showing only on the back of a folded flap,
-  // matching a real paper model: turn it over to see it, it isn't
-  // visible looking at the normal outward face.
-  //
-  // First attempt used a 3D plane-normal test instead (is the camera on
-  // the far side of the static wedge's own plane, Ctr-creaseTip-
-  // neighbor) — confirmed correct in principle, but that wedge's own
-  // plane turns out to sit almost exactly edge-on to the camera right
-  // at CORNER_FACING_ANGLE itself (measured: ~1° off dead-on edge-on,
-  // for every corner) — a coincidence of this crease pattern's
-  // geometry, not a bug in the test, but it put the front/back flip
-  // exactly where a real user is looking by default, so any small sway
-  // or drag crossed it.
-  //
-  // Second attempt used a plain >90° rotation-angle distance from that
-  // corner's own default facing angle — still wrong, for a related
-  // reason: CORNER_FACING_ANGLE for the 4 corners sits exactly 90°
-  // apart from each other by construction (confirmed: 86°/176°/266°/
-  // 356°). So the instant you fold a *second* corner, the camera sits
-  // squarely on an adjacent corner's own default angle — exactly 90°
-  // from the first corner's facing angle too, right back on that
-  // corner's flip point, and the first corner's line lit up again on
-  // what should still read as its front (reported as "still showing on
-  // the front"). 135° instead of 90° clears every adjacent corner's own
-  // facing angle with room to spare — those stay a safe 90° away, well
-  // inside the hidden zone — while still catching a real turn toward
-  // this corner's actual back (180° away).
-  function isBackSide(X){
-    const facing = CORNER_FACING_ANGLE[X];
-    let diff = Math.abs(group.rotation.y - facing) % (2*Math.PI);
-    if(diff > Math.PI) diff = 2*Math.PI - diff;
-    return diff > Math.PI*0.75;
+  // Writes one thin quad (2 triangles, 6 vertices starting at viStart)
+  // spanning p0-to-p1, offset by perp to either side. Vertex order
+  // chosen so the quad's own winding-derived normal matches +wedgeNormal
+  // (see below) — i.e. gl_FrontFacing is true on the paper's normal
+  // outward (Color) side, false on the hidden (White) side, matching
+  // paperMat's own PANELS winding for this same wedge.
+  function writeRibbonQuad(viStart, p0, p1, perp){
+    const a = p0.clone().sub(perp), b = p1.clone().sub(perp);
+    const c = p1.clone().add(perp), d = p0.clone().add(perp);
+    [a,b,c, a,c,d].forEach((v,i)=>{
+      const idx = (viStart+i)*3;
+      peekRibbonPositions[idx]=v.x; peekRibbonPositions[idx+1]=v.y; peekRibbonPositions[idx+2]=v.z;
+    });
   }
 
-  // Re-run every render frame (not just on applyFrame, which only fires
-  // on a step change) since which side is the "back" depends on the
-  // live camera angle — the ambient sway and manual drag both change it
-  // continuously between steps. Reuses the same collapse-to-a-point
-  // hiding trick as the step-gated lines above; which point doesn't
-  // matter for a zero-length segment.
+  // Both PEEK_EDGE_PAIRS segments for a corner live in one shared plane
+  // (Ctr, creaseTip, neighbor, and — confirmed algebraically and via
+  // render — the corner point too, even after that corner's own fold),
+  // so one wedgeNormal per corner positions both ribbons.
   function updatePeekEdgeVisibility(){
     if(!currentFrame) return;
     const frame = currentFrame;
     const Ctr = frame.Ctr || FLAT.Ctr;
-    ['A','B','C','D'].forEach(X=>{
-      const start = PEEK_EDGE_INDEX[X];
+    ['A','B','C','D'].forEach((X,ci)=>{
+      const quadBase = ci * 12; // 2 segments * 6 verts
       const primary = PRIMARY_NEIGHBOR[X];
       const cornerPt = frame[X] || FLAT[X];
       const creaseTip = frame[X+'_'+primary+'_r'] || FLAT[X+'_'+primary+'_r'];
       const neighborPt = frame[X+'_'+primary] || FLAT[X+'_'+primary];
-      // One shared decision for both segments (see isBackSide above) —
-      // an earlier per-wedge version made the two segments flip
-      // back/front at different camera angles, so only one ever showed
-      // at a time instead of the matching pair a real folded flap's
-      // back actually shows together. Also gated on this specific
-      // corner having actually been folded (matching CORNER_FOLD_
-      // STEP_INDEX's use for CREASE_LINE_INDEX above) — found via the
-      // opposite corner's own facing angle landing this corner's own
-      // isBackSide on the "shown" side (they're all 90° apart — see
-      // isBackSide above): without this, folding corner A also lit up
-      // corner C's peek line, even though C's own flap hadn't been
-      // folded down at all yet.
-      const show = stepIndex > COLLAPSE_STEP_INDEX && stepIndex > CORNER_FOLD_STEP_INDEX[X] && isBackSide(X);
-      const p0 = show ? creaseTip : Ctr, p1 = show ? cornerPt : Ctr;
-      const p2 = show ? creaseTip : Ctr, p3 = show ? neighborPt : Ctr;
-      peekEdgePositions[start*3]=p0.x; peekEdgePositions[start*3+1]=p0.y; peekEdgePositions[start*3+2]=p0.z;
-      peekEdgePositions[(start+1)*3]=p1.x; peekEdgePositions[(start+1)*3+1]=p1.y; peekEdgePositions[(start+1)*3+2]=p1.z;
-      peekEdgePositions[(start+2)*3]=p2.x; peekEdgePositions[(start+2)*3+1]=p2.y; peekEdgePositions[(start+2)*3+2]=p2.z;
-      peekEdgePositions[(start+3)*3]=p3.x; peekEdgePositions[(start+3)*3+1]=p3.y; peekEdgePositions[(start+3)*3+2]=p3.z;
+      // Same collapse-to-a-point hiding as the step-gated lines above —
+      // before the base has collapsed, or before this specific corner
+      // has actually been folded (matching CORNER_FOLD_STEP_INDEX's use
+      // for CREASE_LINE_INDEX), there's no real fold here yet to show
+      // the back of.
+      if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X]){
+        for(let i=0;i<12;i++){
+          const idx = (quadBase+i)*3;
+          peekRibbonPositions[idx]=Ctr.x; peekRibbonPositions[idx+1]=Ctr.y; peekRibbonPositions[idx+2]=Ctr.z;
+        }
+        return;
+      }
+      const wedgeNormal = new THREE.Vector3()
+        .crossVectors(new THREE.Vector3().subVectors(creaseTip, Ctr), new THREE.Vector3().subVectors(neighborPt, Ctr))
+        .normalize();
+      const seg1Dir = new THREE.Vector3().subVectors(cornerPt, creaseTip).normalize();
+      const perp1 = new THREE.Vector3().crossVectors(seg1Dir, wedgeNormal).normalize().multiplyScalar(PEEK_RIBBON_HALF_WIDTH);
+      writeRibbonQuad(quadBase, creaseTip, cornerPt, perp1);
+      const seg2Dir = new THREE.Vector3().subVectors(neighborPt, creaseTip).normalize();
+      const perp2 = new THREE.Vector3().crossVectors(seg2Dir, wedgeNormal).normalize().multiplyScalar(PEEK_RIBBON_HALF_WIDTH);
+      writeRibbonQuad(quadBase+6, creaseTip, neighborPt, perp2);
     });
-    peekEdgeGeo.attributes.position.needsUpdate = true;
+    peekRibbonGeo.attributes.position.needsUpdate = true;
   }
 
   function applyFrame(frame){
@@ -977,11 +976,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         group.rotation.y = baseRotationY;
       }
     }
-    // Which side is the "back" (see isBackSide above) depends on the
-    // live group.rotation.y, which the ambient sway and manual drag
-    // both change continuously between steps — not just on the
-    // applyFrame calls that fire on a step change.
-    updatePeekEdgeVisibility();
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
