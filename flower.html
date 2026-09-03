@@ -588,6 +588,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // where the sheet is still flat/simply-folded enough that it is).
   const COLLAPSE_STEP_INDEX = STEPS.findIndex(s=>s.type==='collapse');
 
+  // Index of the step that reverses all 4 corner folds at once — used by
+  // updatePeekEdgeVisibility below to hide the peek ribbon again once a
+  // corner is no longer actually folded down. CORNER_FOLD_STEP_INDEX alone
+  // only tells us the fold has happened at some point in the past, not
+  // that it still holds; without this, the ribbon kept using its
+  // once-folded (and by then very stale) position data straight through
+  // to "Done".
+  const UNFOLD_ALL_CORNERS_STEP_INDEX = STEPS.findIndex(s=>s.type==='unfold-all-corners');
+
   // Declared here (rather than down with the rest of the playback state)
   // so it's already initialized by the time the initial applyFrame(FLAT)
   // call below reads it — applyFrame is defined before the playback
@@ -746,7 +755,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // plane both PEEK_EDGE_PAIRS segments live in) so the quad's own
   // winding, and therefore its own front/back sense, matches the
   // paper mesh's own PANELS winding for that same wedge.
-  const PEEK_RIBBON_HALF_WIDTH = 0.7;
+  const PEEK_RIBBON_HALF_WIDTH = 0.25;
   const peekRibbonPositions = new Float32Array(['A','B','C','D'].length * 2 * 6 * 3);
   const peekRibbonGeo = new THREE.BufferGeometry();
   peekRibbonGeo.setAttribute('position', new THREE.BufferAttribute(peekRibbonPositions, 3));
@@ -807,8 +816,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // before the base has collapsed, or before this specific corner
       // has actually been folded (matching CORNER_FOLD_STEP_INDEX's use
       // for CREASE_LINE_INDEX), there's no real fold here yet to show
-      // the back of.
-      if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X]){
+      // the back of. Also collapsed once unfold-all-corners has run (or
+      // is running): past that point the corner isn't folded down any
+      // more, so cornerPt no longer traces a real crease — left ungated,
+      // it kept using that once-folded position clear through to "Done",
+      // stretched out across the reopened flap.
+      if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X] ||
+         (UNFOLD_ALL_CORNERS_STEP_INDEX >= 0 && stepIndex >= UNFOLD_ALL_CORNERS_STEP_INDEX)){
         for(let i=0;i<12;i++){
           const idx = (quadBase+i)*3;
           peekRibbonPositions[idx]=Ctr.x; peekRibbonPositions[idx+1]=Ctr.y; peekRibbonPositions[idx+2]=Ctr.z;
