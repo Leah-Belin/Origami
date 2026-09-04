@@ -384,11 +384,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // the waterbomb base, the constraint alone doesn't say which of the two
   // ends is up: confirmed against real folded paper, the merge point (and
   // the corners riding along with it) sit ABOVE center, with center
-  // dipping down as the opposite tip. That's how the base naturally rests
-  // right after collapsing — COLLAPSED below is exactly that pose, kept
-  // around only as the un-rotated basis for COLLAPSED_UP (see below) and
-  // for facing checks; nothing reads from COLLAPSED directly once it's
-  // built.
+  // dipping down as the opposite tip.
   // The collapse itself starts from plain FLAT: real instructions turn the
   // paper over a SECOND time after the diagonal creases (see the STEPS
   // array below) to put it back in its starting orientation before the
@@ -423,21 +419,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // layer alone already covers the flap's full area once collapsed,
   // since the two were duplicates anyway.
   //
-  // Which of the 2 counts as "surviving" isn't arbitrary — not because
-  // one of the two would show the wrong color (color is pinned outright
-  // once collapsed, independent of which layer survives — see aForce
-  // further down), but because the 4 sides (N/E/S/W) each need exactly
-  // one of their 2 bordering corners to claim them: A and B both border
-  // N, B and C both border E, C and D both border S, D and A both border
-  // W — a 4-cycle, so every corner picking its own first-listed
-  // CREASE_NEIGHBORS entry (the naive default) claims N twice (A and B)
-  // and leaves S unclaimed by either C or D — a real gap, a whole side of
-  // the base with no surviving geometry at all, not just a cosmetic
-  // color mismatch. A 4-cycle has exactly 2 matchings where every side
-  // gets claimed once: this table is one of them (picked over its mirror
-  // — A:W, B:N, C:E, D:S — because that one needs D's *first*-listed
-  // entry, S, which read backwards on inspection; W didn't).
-  const PRIMARY_NEIGHBOR = { A:'N', B:'E', C:'S', D:'W' };
+  // Which of the 2 counts as "surviving" isn't arbitrary: each of the 8
+  // original (pre-split) ring panels has its own fixed front/back facing
+  // once collapsed (checked directly against the solved 3D positions),
+  // and it's a genuine mix, not 4-fold symmetric — 3 corners' first-
+  // listed CREASE_NEIGHBORS entry faces out, but D's does not. Picking
+  // the wrong one per corner would make that flap show its inside
+  // (front/white) while its neighbors show outside (back/uBack) —
+  // exactly the "wrong color" a viewer would notice. This table is the
+  // one choice, per corner, that makes all 4 agree.
+  const PRIMARY_NEIGHBOR = { A:'N', B:'N', C:'E', D:'W' };
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const primary = PRIMARY_NEIGHBOR[X];
@@ -454,89 +445,17 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
   withCreaseTips(COLLAPSED);
 
-  // One more line segment per corner, separate from the squash-fold
-  // precrease creases in CREASE_LINE_INDEX above: Ctr to that corner's
-  // *surviving* layer's own crease point — the fold the collapse itself
-  // already made, between that layer's static and moving wedges. Shown
-  // as soon as the base finishes collapsing rather than gated behind a
-  // later "fold corner X" step, since there's nothing left to see happen
-  // for this one — the collapse already made it. Confirmed against real
-  // paper: this is the one mark a real, freshly-collapsed base actually
-  // shows there — no colored sliver of the hidden second layer needed
-  // (see the reverted attempt at that), just this fold line.
-  const BASE_FOLD_LINE_INDEX = {};
-  ['A','B','C','D'].forEach(X=>{
-    BASE_FOLD_LINE_INDEX[X] = LINE_PAIRS.length;
-    LINE_PAIRS.push('Ctr', X+'_'+PRIMARY_NEIGHBOR[X]+'_r');
-  });
-
-  // The surviving layer for corner X is 2 right triangles meeting at the
-  // crease point (Ctr,X,X_primary_r — the moving wedge — and
-  // Ctr,X_primary_r,X_primary — the static one; see PANELS above),
-  // confirmed against a real folded model by looking at the *back* of
-  // one folded flap: 2 right triangles, the right angle in both sitting
-  // at the crease point, one leg shared (the Ctr–crease-point line,
-  // continuing on through the crease point to the folded-down corner
-  // once that fold's happened — see foldedCorner) and the other leg
-  // (crease-point to X_primary) is the one edge of this shape that
-  // isn't drawn anywhere yet. Without it, this whole shape reads as one
-  // straight line (Ctr through the crease point to X), not the 2
-  // triangles a real model actually shows there. Neither of this
-  // shape's non-shared legs (crease-point–X and crease-point–X_primary)
-  // is folded into the dark CREASE_LINE_INDEX/rim overlay above,
-  // because each sits exactly on top of the surviving layer's own outer
-  // silhouette or rim edge — the same dark, semi-transparent color
-  // drawn there would just retrace a line that's already visible for
-  // free. Built as an actual ribbon mesh further down (see
-  // updatePeekEdgeVisibility) rather than a line, since what's really
-  // there is a genuine second layer of paper, not a 1D mark.
-
-  // The squash-fold precrease (every step after the collapse) is done
-  // holding the base with its closed tip up and the 4 flaps hanging
-  // below, meeting at the open merge point in the middle — confirmed
-  // against real paper, and the opposite way up from how the collapse
-  // itself naturally settles (COLLAPSED above: closed tip down). Rather
-  // than collapsing to COLLAPSED and then turning the result over as a
-  // separate step, COLLAPSED_UP bakes that same 180° turn (about this
-  // arbitrary but fixed horizontal axis, a rigid rotation, not a
-  // mirror-image reflection) directly into the collapse's own target —
-  // one continuous move that settles straight into the tip-up hold —
-  // exactly the fixed relative geometry of COLLAPSED, since a rotation
-  // doesn't change a rigid pose's actual shape, only which way it faces.
-  const COLLAPSED_UP_AXIS = new THREE.Vector3(1, 0, 0);
-  const COLLAPSED_UP = {};
-  Object.keys(COLLAPSED).forEach(name=>{
-    COLLAPSED_UP[name] = rotateAroundAxisAtOrigin(COLLAPSED[name], COLLAPSED_UP_AXIS, Math.PI);
-  });
-
-  // Every step from the flip onward (each corner's precrease fold, and
-  // any jump/replay landing on or past "the flipped base") reads from
-  // SETTLED instead of the idealized COLLAPSED_UP values directly, for
-  // the same "stop just short of the exact endpoint" reason the collapse
-  // animation itself uses pc=min(p,0.98) below: at p=1 every point would
-  // sit exactly on its target, and a few of those targets (Ctr, at the
-  // very end of a corner's own fold) are genuine coincidences the depth
-  // test would otherwise have to break a tie on.
-  //
-  // Built in two stages — SETTLED_DOWN first (closed tip down, matching
-  // where the collapse animation itself actually ends), then SETTLED as
-  // that single consistent shape rotated 180° — rather than lerping
-  // straight toward COLLAPSED_UP. Those two are only the same thing at
-  // the untouched endpoints: partway through a shared animation they're
-  // different paths, since FLAT isn't rotation-invariant, and lerping
-  // each point toward its own already-rotated target isn't a rigid
-  // motion (confirmed against a real capture of that: panels that should
-  // stay attached visibly pulled apart from each other mid-fold). Kept
-  // as two genuinely separate steps below (collapse, then flip-collapsed)
-  // rather than folded into one, for the same reason: even rotating a
-  // single consistent shape is only rigid, not necessarily *matching the
-  // real fold* if blended into the same click as the collapse itself —
-  // that reaches the turn's more face-on angles well before the paper
-  // has actually finished gathering into its 3D shape, showing more of
-  // the hidden white than the real, sequential fold ever does.
-  const SETTLED_DOWN = {};
+  // Every step after the collapse (each corner's precrease fold, and any
+  // jump/replay landing on "the collapsed base") reads from this instead
+  // of the idealized COLLAPSED values directly, for the same "stop just
+  // short of the exact endpoint" reason the collapse animation itself
+  // uses pc=min(p,0.98) below: at p=1 every point would sit exactly on
+  // its target, and a few of those targets (Ctr, at the very end of a
+  // corner's own fold) are genuine coincidences the depth test would
+  // otherwise have to break a tie on.
+  const SETTLED = {};
   ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-    SETTLED_DOWN[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
+    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
   });
   // The lerp above interpolates each secondary layer's neighbor-copy
   // independently from FLAT toward COLLAPSED (where it's exactly on the
@@ -560,18 +479,29 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
-    SETTLED_DOWN[X+'_'+secondary] = SETTLED_DOWN.Ctr.clone();
+    SETTLED[X+'_'+secondary] = SETTLED.Ctr.clone();
   });
-  withCreaseTips(SETTLED_DOWN);
+  withCreaseTips(SETTLED);
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
-    SETTLED_DOWN[X+'_'+secondary+'_r'] = SETTLED_DOWN.Ctr.clone();
+    SETTLED[X+'_'+secondary+'_r'] = SETTLED.Ctr.clone();
   });
-  const SETTLED = {};
-  Object.keys(SETTLED_DOWN).forEach(name=>{
-    SETTLED[name] = rotateAroundAxisAtOrigin(SETTLED_DOWN[name], COLLAPSED_UP_AXIS, Math.PI);
-  });
+
+  // The squash-fold precrease is done holding the base with its closed
+  // tip (Ctr — every panel funnels down to this single point) pointing
+  // up, and the open end (the merge point, where 4 formerly-separate
+  // edge-midpoints now sit, surrounded by the spread corners) hanging
+  // down where each flap is worked in turn — confirmed against real
+  // paper. SETTLED comes out of the collapse with the closed tip down
+  // instead (that orientation was itself confirmed against paper for the
+  // collapse step): this axis (X — an arbitrary but fixed choice) is what
+  // flipGroup (see above) rotates 180° around to swap up/down as a rigid
+  // rotation, not a mirror-image reflection. Every precrease-corner fold
+  // still computes its own geometry directly from SETTLED, unrotated —
+  // flipGroup is the only thing that makes the result actually appear
+  // tip-up.
+  const FLIP_UP_AXIS = new THREE.Vector3(1, 0, 0);
 
   // ---- Steps ----
   const STEPS = [
@@ -588,9 +518,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
     { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
-    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — folding down onto that same central line.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
-    { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner — the last one. All 4 are folded down now.' },
+    { type:'precrease-corner', corner:'C', label:'Fold corner C', instruction:'Same fold on flap C\'s corner.' },
+    { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — the last one. All 4 are folded down now.' },
     { type:'unfold-all-corners', label:'Unfold all', instruction:'Unfold all 4 at once. Every flap now carries its own crease — next, one flap at a time, it opens and presses flat along it to form a petal.' },
   ];
 
@@ -602,28 +532,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const CORNER_FOLD_STEP_INDEX = {};
   STEPS.forEach((s,i)=>{ if(s.type==='precrease-corner') CORNER_FOLD_STEP_INDEX[s.corner] = i; });
 
-  // Index of the one collapse step — used below to gate the base's own
-  // fold-line mark, revealed once the base has actually collapsed
-  // regardless of whether it's been turned tip-up yet.
-  const COLLAPSE_STEP_INDEX = STEPS.findIndex(s=>s.type==='collapse');
-
-  // Index of the one flip-collapsed step — used by aForce/setForceColor
-  // below to decide, at any given moment, whether panels should be
-  // pinned to the confirmed-correct color (once collapsed and turned
-  // tip-up, the base is complex enough in 3D that gl_FrontFacing alone
-  // isn't reliable from every viewing angle) or left fully dynamic
-  // (every step before that, where the sheet is still flat/simply-folded
-  // enough, or mid-collapse, that it is).
+  // Index of the one flip-collapsed step — used to decide, at any given
+  // moment, whether flipGroup (see above) should sit unrotated (paper
+  // not yet turned over) or at its full 180° (turned over).
   const FLIP_STEP_INDEX = STEPS.findIndex(s=>s.type==='flip-collapsed');
-
-  // Index of the step that reverses all 4 corner folds at once — used by
-  // updatePeekEdgeVisibility below to hide the peek ribbon again once a
-  // corner is no longer actually folded down. CORNER_FOLD_STEP_INDEX alone
-  // only tells us the fold has happened at some point in the past, not
-  // that it still holds; without this, the ribbon kept using its
-  // once-folded (and by then very stale) position data straight through
-  // to "Done".
-  const UNFOLD_ALL_CORNERS_STEP_INDEX = STEPS.findIndex(s=>s.type==='unfold-all-corners');
 
   // Declared here (rather than down with the rest of the playback state)
   // so it's already initialized by the time the initial applyFrame(FLAT)
@@ -631,20 +543,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // section but invoked immediately, and a `let` referenced before its
   // own declaration line runs throws, even from a closure.
   let stepIndex = 0;
-  // Same reason, same early declaration: which corner's own
-  // CORNER_FACING_ANGLE baseRotationY currently sits at, when it got
-  // there by the automatic "face the corner about to fold" navigation
-  // (see animateStep/jumpToStep below) — null once the viewer has taken
-  // over (a real drag) or the view has no particular corner in mind (the
-  // free/reset angle 0). Two corners' own facing angles can be up to
-  // 180° apart (e.g. D's own front sits exactly opposite B's), so
-  // turning to face one corner can land squarely on an already-folded
-  // other corner's back — used by updatePeekEdgeVisibility below to keep
-  // that other corner's own peek from popping up as a seeming
-  // non-sequitur during navigation the viewer didn't ask for; a real
-  // drag (or the free/reset angle) always shows every folded corner's
-  // true state.
-  let peekFocusCorner = null;
 
   // ---- Three.js scene ----
   const stageEl = document.getElementById('stage');
@@ -661,44 +559,32 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   camera.position.set(100, 55, 115);
   camera.lookAt(0, 0, 0);
 
-  // How far to spin the base (about Y, same axis auto-sway/drag already
-  // use) so a given corner sits facing the fixed camera instead of
-  // wherever the collapse happens to leave it — computed once from each
-  // corner's actual position (COLLAPSED_UP, already in the as-rendered
-  // tip-up orientation) rather than assumed, since the 4 corners aren't
-  // evenly spaced relative to this camera angle (B already sits close to
-  // facing it; A, C, and D don't). Applied whenever that corner's own
-  // precrease-corner step becomes current, so its fold is never stuck
-  // playing out on the far side of the model from the viewer.
-  const CORNER_FACING_ANGLE = {};
-  ['A','B','C','D'].forEach(X=>{
-    const p = COLLAPSED_UP[X];
-    CORNER_FACING_ANGLE[X] = Math.atan2(camera.position.x, camera.position.z) - Math.atan2(p.x, p.z);
-  });
-
   const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
   stageEl.appendChild(renderer.domElement);
 
   const group = new THREE.Group();
   scene.add(group);
+  // The flip-collapsed step's 180° turn (see FLIP_UP_AXIS above) lives
+  // here, as a real rotation of this wrapping group, rather than baked
+  // into the paper's own vertex positions — unlike every other step's
+  // animation, which computes new point positions each frame. That's
+  // deliberate: a fixed camera watching a *vertex* rotation genuinely
+  // does end up looking at whatever was previously the far side (a real
+  // consequence of physically turning the base over without moving your
+  // eye), which read as "weird coloring" once confirmed against paper.
+  // A *group* rotation doesn't have that problem — it composes with the
+  // user's own drag/auto-sway rotation on the outer `group` exactly the
+  // way those already do, so gl_FrontFacing keeps resolving correctly
+  // from any angle, not just the one this app happens to render at.
+  // Every precrease-corner fold's own geometry is computed in the
+  // pre-flip (SETTLED) frame regardless — flipGroup's rotation is the
+  // only thing that makes the whole base visibly sit tip-up afterward.
+  const flipGroup = new THREE.Group();
+  group.add(flipGroup);
 
-  // Ambient-heavy on purpose: the 2 directional lights are fixed in world
-  // space, but the model itself rotates to bring each corner's fold to
-  // face the camera (see CORNER_FACING_ANGLE below) — so a folded flap's
-  // final orientation relative to those lights differs corner to corner,
-  // and strong directional lighting made an otherwise-identically-colored
-  // flap read anywhere from bright white to a dim, gray-looking white
-  // depending purely on which corner it belonged to (confirmed: same
-  // uFront color, same shape up to the expected rotation, different only
-  // in how much of the 2 fixed lights each one's final normal happened to
-  // catch). Leaning on ambient keeps every orientation close to its true
-  // color regardless of which way the model's been turned to face it,
-  // matching real paper under ordinary, non-dramatic room light — the two
-  // directional lights are kept only for enough shading to still read as
-  // 3D, not to drive the actual color.
-  scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-  const dir1 = new THREE.DirectionalLight(0xffffff, 0.35); dir1.position.set(100,150,100); scene.add(dir1);
-  const dir2 = new THREE.DirectionalLight(0xffffff, 0.2); dir2.position.set(-100,-50,-100); scene.add(dir2);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.35); dir2.position.set(-100,-50,-100); scene.add(dir2);
 
   // Non-indexed: 8 panels x 3 vertices, none shared — lets each triangle
   // keep its own normal (and its own color) under flatShading instead of
@@ -708,20 +594,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const positions = new Float32Array(vertCount * 3);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
-  // gl_FrontFacing answers "which side of this triangle faces the camera
-  // *right now*" — reliable pre-collapse (confirmed against real paper
-  // for every top/side/diagonal fold step), but not once the base is
-  // collapsed: a panel that's confirmed to always show uBack (red) reads
-  // correctly for about half of any full camera orbit and flips to the
-  // wrong answer for the other half — not an edge-on sliver, a wide,
-  // wrong-colored arc, since the 2 fixed-position lights and the fixed
-  // camera don't track which way the model's been turned. So once
-  // collapsed, color is pinned outright rather than trusted to
-  // gl_FrontFacing at all — the paper never shows anything but uBack
-  // (red) from this point on, matching the confirmed-correct resting
-  // exterior color, including for whichever corner is actively folding:
-  // the precrease steps only ever crease the paper (see the crease-line
-  // overlay below) and fold back — they don't turn it inside out.
+  // gl_FrontFacing alone answers "which side of this triangle faces the
+  // camera *right now*" — exactly what a folding flap needs, since which
+  // side it shows genuinely depends on how far it's swung. But once the
+  // base is collapsed and flipped, a handful of its panels sit at angles,
+  // relative to that 180° turn, where a realistic amount of ambient
+  // sway or drag brings their normal edge-on to the camera and past —
+  // showing their (correct, uFront/white) reverse for a real reason, not
+  // a bug, but one this app already settled for every *other* corner via
+  // PRIMARY_NEIGHBOR (choosing the layer that's confirmed to face out,
+  // once, rather than re-deriving it live per frame). aForce carries
+  // that same "already confirmed, no need to re-check" decision forward
+  // for a corner's static (not currently mid-fold) geometry once it's
+  // past the flip: 1 pins a vertex's triangle to uBack outright, 0 falls
+  // back to gl_FrontFacing as normal — still needed for a flap actively
+  // swinging through its own fold, which legitimately shows both sides.
   const aForce = new Float32Array(vertCount);
   geometry.setAttribute('aForce', new THREE.BufferAttribute(aForce, 1));
 
@@ -737,16 +624,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // source) so the color swatches can change it live.
   const colorUniforms = { uFront: { value: new THREE.Color(...WHITE) }, uBack: { value: new THREE.Color(...RED) } };
   const paperMat = new THREE.MeshStandardMaterial({
-    side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true,
-    // Pushes the filled paper surface back very slightly in the depth
-    // buffer (WebGL applies this to triangle rasterization only, which
-    // is exactly what's needed here) — every crease/rim/peek line above
-    // runs exactly along some paper edge, i.e. at exactly the same
-    // depth as this mesh there, and without this offset that exact tie
-    // is a coin flip per pixel: some lines happened to win it, but the
-    // new PEEK_EDGE_PAIRS line (confirmed against a real render) lost
-    // it outright and never drew at all.
-    polygonOffset:true, polygonOffsetFactor:1, polygonOffsetUnits:1
+    side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true
   });
   paperMat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, colorUniforms);
@@ -762,139 +640,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     );
   };
   const paperMesh = new THREE.Mesh(geometry, paperMat);
-  group.add(paperMesh);
+  flipGroup.add(paperMesh);
 
   const linePositions = new Float32Array(LINE_PAIRS.length * 3);
   const lineGeo = new THREE.BufferGeometry();
   lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
   const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
   const lines = new THREE.LineSegments(lineGeo, lineMat);
-  group.add(lines);
-
-  // See PEEK_EDGE_PAIRS above — drawn as an actual thin ribbon *mesh*
-  // for each of those 2 edges, not a line: real paper is a genuine
-  // second layer with two sides, and which side is showing at any
-  // point is a property of that layer's own geometry versus the
-  // viewer, not of "which way the camera happens to be rotated" — so
-  // it's rendered with the exact same test the paper's own shading
-  // already relies on (gl_FrontFacing — see paperMat below) instead of
-  // reimplementing that test as a camera-angle heuristic. Confirmed
-  // the heuristic version unreliable three separate ways this session:
-  // the wedge's own plane sits edge-on to the camera exactly at each
-  // corner's default view; the 4 corners' default views are exactly
-  // 90° apart, so any correction for one miscalibrated an adjacent
-  // corner; and even once both of those were patched around, the
-  // remaining reveal arc only kicked in once the model was turned
-  // almost all the way around, because pushing the threshold out to
-  // dodge the 90°-spacing problem narrowed it that much. A real
-  // gl_FrontFacing test has none of these problems — it's simply
-  // correct from any angle, by construction, the same way it already
-  // is for the rest of the paper.
-  //
-  // Each edge is a thin quad (not a 0-width line) — two triangles
-  // spanning the segment, offset a small fixed width to either side
-  // within the wedge's own plane (Ctr, creaseTip, neighbor — the same
-  // plane both PEEK_EDGE_PAIRS segments live in) so the quad's own
-  // winding, and therefore its own front/back sense, matches the
-  // paper mesh's own PANELS winding for that same wedge.
-  const PEEK_RIBBON_HALF_WIDTH = 0.25;
-  const peekRibbonPositions = new Float32Array(['A','B','C','D'].length * 2 * 6 * 3);
-  const peekRibbonGeo = new THREE.BufferGeometry();
-  peekRibbonGeo.setAttribute('position', new THREE.BufferAttribute(peekRibbonPositions, 3));
-  // side:DoubleSide so gl_FrontFacing is evaluated per fragment from
-  // both directions rather than culling the back face outright — the
-  // whole point is to distinguish, not discard, the back.
-  const peekRibbonMat = new THREE.ShaderMaterial({
-    side: THREE.DoubleSide,
-    transparent: true,
-    vertexShader: `
-      void main(){
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      void main(){
-        if(gl_FrontFacing) discard;
-        gl_FragColor = vec4(${WHITE[0]}, ${WHITE[1]}, ${WHITE[2]}, 1.0);
-      }
-    `
-  });
-  const peekRibbonMesh = new THREE.Mesh(peekRibbonGeo, peekRibbonMat);
-  peekRibbonMesh.renderOrder = 1;
-  group.add(peekRibbonMesh);
-
-  let currentFrame = null;
-
-  // Writes one thin quad (2 triangles, 6 vertices starting at viStart)
-  // spanning p0-to-p1, offset by perp to either side. Vertex order
-  // chosen so the quad's own winding-derived normal matches +wedgeNormal
-  // (see below) — i.e. gl_FrontFacing is true on the paper's normal
-  // outward (Color) side, false on the hidden (White) side, matching
-  // paperMat's own PANELS winding for this same wedge.
-  function writeRibbonQuad(viStart, p0, p1, perp){
-    const a = p0.clone().sub(perp), b = p1.clone().sub(perp);
-    const c = p1.clone().add(perp), d = p0.clone().add(perp);
-    [a,b,c, a,c,d].forEach((v,i)=>{
-      const idx = (viStart+i)*3;
-      peekRibbonPositions[idx]=v.x; peekRibbonPositions[idx+1]=v.y; peekRibbonPositions[idx+2]=v.z;
-    });
-  }
-
-  // Both PEEK_EDGE_PAIRS segments for a corner live in one shared plane
-  // (Ctr, creaseTip, neighbor, and — confirmed algebraically and via
-  // render — the corner point too, even after that corner's own fold),
-  // so one wedgeNormal per corner positions both ribbons.
-  function updatePeekEdgeVisibility(){
-    if(!currentFrame) return;
-    const frame = currentFrame;
-    const Ctr = frame.Ctr || FLAT.Ctr;
-    ['A','B','C','D'].forEach((X,ci)=>{
-      const quadBase = ci * 12; // 2 segments * 6 verts
-      const primary = PRIMARY_NEIGHBOR[X];
-      const cornerPt = frame[X] || FLAT[X];
-      const creaseTip = frame[X+'_'+primary+'_r'] || FLAT[X+'_'+primary+'_r'];
-      const neighborPt = frame[X+'_'+primary] || FLAT[X+'_'+primary];
-      // Same collapse-to-a-point hiding as the step-gated lines above —
-      // before the base has collapsed, or before this specific corner
-      // has actually been folded (matching CORNER_FOLD_STEP_INDEX's use
-      // for CREASE_LINE_INDEX), there's no real fold here yet to show
-      // the back of. Also collapsed once unfold-all-corners has run (or
-      // is running): past that point the corner isn't folded down any
-      // more, so cornerPt no longer traces a real crease — left ungated,
-      // it kept using that once-folded position clear through to "Done",
-      // stretched out across the reopened flap. And collapsed for every
-      // corner but the one the automatic navigation is currently facing
-      // (peekFocusCorner) — two corners' own facing angles can be a full
-      // 180° apart (e.g. D's own front sits exactly opposite B's), so
-      // turning to show corner B's fold face-on can otherwise land
-      // squarely on corner D's back, popping its own peek into view for
-      // a reason that has nothing to do with what's on screen. A real
-      // drag clears peekFocusCorner, so every folded corner's true
-      // gl_FrontFacing state is always reachable by looking.
-      if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X] ||
-         (UNFOLD_ALL_CORNERS_STEP_INDEX >= 0 && stepIndex >= UNFOLD_ALL_CORNERS_STEP_INDEX) ||
-         (peekFocusCorner !== null && peekFocusCorner !== X)){
-        for(let i=0;i<12;i++){
-          const idx = (quadBase+i)*3;
-          peekRibbonPositions[idx]=Ctr.x; peekRibbonPositions[idx+1]=Ctr.y; peekRibbonPositions[idx+2]=Ctr.z;
-        }
-        return;
-      }
-      const wedgeNormal = new THREE.Vector3()
-        .crossVectors(new THREE.Vector3().subVectors(creaseTip, Ctr), new THREE.Vector3().subVectors(neighborPt, Ctr))
-        .normalize();
-      const seg1Dir = new THREE.Vector3().subVectors(cornerPt, creaseTip).normalize();
-      const perp1 = new THREE.Vector3().crossVectors(seg1Dir, wedgeNormal).normalize().multiplyScalar(PEEK_RIBBON_HALF_WIDTH);
-      writeRibbonQuad(quadBase, creaseTip, cornerPt, perp1);
-      const seg2Dir = new THREE.Vector3().subVectors(neighborPt, creaseTip).normalize();
-      const perp2 = new THREE.Vector3().crossVectors(seg2Dir, wedgeNormal).normalize().multiplyScalar(PEEK_RIBBON_HALF_WIDTH);
-      writeRibbonQuad(quadBase+6, creaseTip, neighborPt, perp2);
-    });
-    peekRibbonGeo.attributes.position.needsUpdate = true;
-  }
+  flipGroup.add(lines);
 
   function applyFrame(frame){
-    currentFrame = frame;
     let vi = 0;
     PANELS.forEach(tri=>{
       tri.forEach(name=>{
@@ -920,33 +675,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         linePositions[(start+k)*3]=c.x; linePositions[(start+k)*3+1]=c.y; linePositions[(start+k)*3+2]=c.z;
       }
     });
-    // Same collapse-to-nothing trick for the base's own fold line (see
-    // BASE_FOLD_LINE_INDEX above) — hidden until the base itself has
-    // finished collapsing, since before that Ctr and this crease point
-    // aren't a fold yet, just 2 ordinary points on the flat sheet.
-    if(stepIndex <= COLLAPSE_STEP_INDEX){
-      ['A','B','C','D'].forEach(X=>{
-        const start = BASE_FOLD_LINE_INDEX[X];
-        const c = frame.Ctr || FLAT.Ctr;
-        linePositions[start*3]=c.x; linePositions[start*3+1]=c.y; linePositions[start*3+2]=c.z;
-        linePositions[(start+1)*3]=c.x; linePositions[(start+1)*3+1]=c.y; linePositions[(start+1)*3+2]=c.z;
-      });
-    }
     lineGeo.attributes.position.needsUpdate = true;
-
-    updatePeekEdgeVisibility();
   }
 
-  // See aForce above: once pastCollapse, every panel (including whichever
-  // corner is actively mid-fold) is pinned to uBack.
-  function setForceColor(pastCollapse){
-    const force = pastCollapse ? 1 : 0;
-    aForce.fill(force);
+  // See aForce above: once pastFlip, every panel is pinned to uBack
+  // except the 2 (of 16) belonging to each corner actively mid-fold right
+  // now (activeCorners, an array — empty/null when nothing's animating,
+  // 1 entry for a single precrease-corner step, all 4 during
+  // unfold-all-corners) — those pairs are exactly the ones with that
+  // corner's bare letter as a vertex name (see PANELS), matching how
+  // frameForStep itself only moves that same bare-letter point.
+  function setForceColor(pastFlip, activeCorners){
+    PANELS.forEach((tri, i)=>{
+      const isActive = activeCorners && activeCorners.some(c=>tri.includes(c));
+      const force = (pastFlip && !isActive) ? 1 : 0;
+      aForce[i*3] = aForce[i*3+1] = aForce[i*3+2] = force;
+    });
     geometry.attributes.aForce.needsUpdate = true;
   }
 
   applyFrame(FLAT);
-  setForceColor(false);
+  setForceColor(false, null);
 
   function resize(){
     const w = stageEl.clientWidth, h = stageEl.clientHeight;
@@ -973,13 +722,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const DRAG_THRESHOLD = 4;
   let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
   let downX = 0, downY = 0, lastX = 0, lastY = 0;
-  // The angle auto-sway settles around — normally 0, but set to a
-  // corner's own CORNER_FACING_ANGLE (see above) whenever that corner's
-  // precrease-corner step becomes current, so the fold plays out facing
-  // the viewer instead of wherever the model happened to be left. Reset
-  // to 0 alongside stepIndex on reset(); left alone by a manual drag,
-  // same as the sway itself.
-  let baseRotationY = 0;
 
   const dragHintEl = document.getElementById('dragHint');
   function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
@@ -998,11 +740,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // Threshold just crossed: this is a real drag, not a stray tap.
       dragging = true;
       userRotating = true;
-      // The viewer is driving now — every folded corner's peek should
-      // show its true gl_FrontFacing state again, not stay suppressed
-      // for whichever corner the automatic navigation was last facing.
-      peekFocusCorner = null;
-      updatePeekEdgeVisibility();
       stageEl.classList.add('grabbing');
       hideDragHint();
       lastX = e.clientX; lastY = e.clientY;
@@ -1033,19 +770,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     else return;
     e.preventDefault();
     if(!userRotating){ userRotating = true; hideDragHint(); }
-    if(peekFocusCorner !== null){ peekFocusCorner = null; updatePeekEdgeVisibility(); }
     group.rotation.y += dy;
     group.rotation.x += dx;
   });
 
   function renderLoop(){
-    if(!userRotating){
-      if(!reducedMotion){
-        autoRotate += 0.003;
-        group.rotation.y = baseRotationY + Math.sin(autoRotate) * 0.35;
-      } else {
-        group.rotation.y = baseRotationY;
-      }
+    if(!userRotating && !reducedMotion){
+      autoRotate += 0.003;
+      group.rotation.y = Math.sin(autoRotate) * 0.35;
     }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
@@ -1102,86 +834,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
 
-  // The nearby target angle equivalent to `to` (mod 2π) that's closest to
-  // `from` — so easing group.rotation.y toward it always takes the short
-  // way around, even after a manual drag has wound rotation.y up well
-  // past a single turn.
-  function nearestEquivalentAngle(from, to){
-    const twoPi = Math.PI * 2;
-    let delta = (to - from) % twoPi;
-    if(delta > Math.PI) delta -= twoPi;
-    if(delta < -Math.PI) delta += twoPi;
-    return from + delta;
-  }
-
   // Corner X folded to fraction angleRad of its own 180° hinge (see
   // precrease-corner below for the geometry) — shared by that step and
   // unfold-all-corners, which runs the same hinge for all 4 corners at
   // once instead of one at a time.
-  //
-  // The hinge is the angle bisector at Ctr between Ctr→corner and
-  // Ctr→(this flap's neighbor) — and since N/E/S/W all collapse to the
-  // exact same physical merge point, every corner's bisector should aim
-  // at that one shared point, landing all 4 folded corners on the same
-  // line. Computing it via a *specific* layer's own crease-edge point
-  // (X+'_'+PRIMARY_NEIGHBOR[X]+'_r', on that corner's own N/E/S/W edge)
-  // doesn't hold that guarantee: each layer-specific N/E/S/W copy is only
-  // SETTLED's 98%-lerp away from FLAT — not the exact merge point — and
-  // each corner's copy carries a different 2% residual toward its own
-  // *different* FLAT-state neighbor (A's toward FLAT.N, B's toward
-  // FLAT.E, C's toward FLAT.S, D's toward FLAT.W) — different enough,
-  // after reflecting across it, to send corners folding toward two
-  // different lines on opposite sides of the model instead of one shared
-  // line. Using COLLAPSED_UP.N — the exact merge point, not a 98%-lerped
-  // approximation of it, and bit-identical to COLLAPSED_UP.E/S/W since
-  // they're all literally the same collapsed point — removes that
-  // divergence at the source, and more precisely than any SETTLED-based
-  // pick could: reflecting through the exact point lands every corner
-  // exactly on it (not just consistently near it), *and* — unlike
-  // reflecting through SETTLED.N specifically, which only happens to sit
-  // in corner A's own local crease-plane (A's primary neighbor is N) —
-  // it stays equally exact for B, C, and D's own crease-planes too, since
-  // there's no single favored corner baked into an exact point the way
-  // there is into any one SETTLED N/E/S/W pick. The bisector direction
-  // itself is the sum of the two unit vectors from Ctr — a standard
-  // identity, and exactly the direction the old per-layer construction
-  // was aiming for.
-  // Which way this bisector axis points is only pinned down (by the
-  // addVectors identity above) up to sign — flipping it doesn't change
-  // where p=1 lands (a 180° rotation about an axis and about its negation
-  // are the same rotation), but it does flip which way the flap swings to
-  // get there. Left to the formula's natural sign, that swing direction
-  // isn't camera-consistent: rotating each corner's own initial swing
-  // into that corner's own CORNER_FACING_ANGLE view and checking it
-  // against the camera direction, A and C swing away from the viewer
-  // first (the crease stays hidden behind the flap as it lifts, matching
-  // real paper) while B and D swing toward the viewer first (the crease
-  // shows on the near face mid-swing). Same root cause as
-  // PRIMARY_NEIGHBOR's own asymmetry above: the bisector always aims at
-  // the one shared merge point (SETTLED.N), but the 4 corners sit 90°
-  // apart around it, so two are naturally "before" that direction and two
-  // "after". Computed once and negated only for the corners that need it,
-  // so every corner's fold swings away from its own viewer the same way
-  // A's already does.
-  const CAM_DIR = new THREE.Vector3(camera.position.x, 0, camera.position.z).normalize();
-  const FOLD_AXIS_SIGN = {};
-  ['A','B','C','D'].forEach(X=>{
-    const pivot = SETTLED.Ctr;
-    const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
-    const toCorner = rel.clone().normalize();
-    const toMerge = new THREE.Vector3().subVectors(COLLAPSED_UP.N, pivot).normalize();
-    const axis = new THREE.Vector3().addVectors(toCorner, toMerge);
-    const lift = new THREE.Vector3().crossVectors(axis, rel);
-    const liftInView = lift.applyAxisAngle(new THREE.Vector3(0,1,0), CORNER_FACING_ANGLE[X]);
-    FOLD_AXIS_SIGN[X] = liftInView.dot(CAM_DIR) > 0 ? -1 : 1;
-  });
-
   function foldedCorner(X, angleRad){
+    const creaseEdgePoint = SETTLED[X+'_'+PRIMARY_NEIGHBOR[X]+'_r'];
     const pivot = SETTLED.Ctr;
+    const axis = new THREE.Vector3().subVectors(creaseEdgePoint, pivot);
     const rel = new THREE.Vector3().subVectors(SETTLED[X], pivot);
-    const toCorner = rel.clone().normalize();
-    const toMerge = new THREE.Vector3().subVectors(COLLAPSED_UP.N, pivot).normalize();
-    const axis = new THREE.Vector3().addVectors(toCorner, toMerge).multiplyScalar(FOLD_AXIS_SIGN[X]);
     return rotateAroundAxisAtOrigin(rel, axis, angleRad).add(pivot);
   }
 
@@ -1219,18 +880,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       return withCreaseTips(out);
     }
     if(step.type==='flip-collapsed'){
-      // A rigid 180° turn of the whole settled-but-still-tip-down base —
-      // every point gets exactly the same rotation angle at each instant,
-      // so nothing moves relative to anything else, unlike lerping each
-      // point toward its own already-rotated target (see SETTLED above).
-      // Starts from SETTLED_DOWN, not the live collapse animation's own
-      // in-progress frame, since this is always its own separate step
-      // now, run only once the collapse itself has actually finished.
-      const out = {};
-      Object.keys(SETTLED_DOWN).forEach(name=>{
-        out[name] = rotateAroundAxisAtOrigin(SETTLED_DOWN[name], COLLAPSED_UP_AXIS, p * Math.PI);
-      });
-      return out;
+      // The turn itself is a flipGroup rotation (see above), driven
+      // directly off this step's progress by the animation loop below,
+      // not a change in point positions — every point stays at SETTLED
+      // throughout.
+      return SETTLED;
     }
     if(step.type==='precrease-corner'){
       // This flap's corner folds down onto its neighbor's ray from Ctr —
@@ -1238,8 +892,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // above), which runs through Ctr and that layer's own crease-edge
       // point (X+'_'+primary+'_r'). That point sits ON the axis, so it
       // (and everything else in SETTLED) stays fixed; only the corner
-      // itself moves. Computed directly off SETTLED, which is already
-      // tip-up (see COLLAPSED_UP above) — no separate flip needed.
+      // itself moves. Computed directly off SETTLED (not a rotated copy
+      // of it) — flipGroup is what makes the result appear tip-up.
       // Corners folded by an earlier step (see priorFoldedCorners above)
       // stay folded here too, rather than resetting to SETTLED along
       // with every corner this step doesn't itself concern.
@@ -1309,50 +963,36 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
     const start = performance.now();
     const idx = STEPS.indexOf(step);
-    // Turn to face whichever corner is about to fold (see
-    // CORNER_FACING_ANGLE above) — overrides a manual drag the same way
-    // a fresh corner's own fold is always shown, not left wherever the
-    // viewer last spun it, so every corner's fold is actually visible by
-    // default rather than possibly playing out on the far side. Eased in
-    // over the same duration as the fold itself (see frame() below),
-    // not snapped instantly — adjacent corners can be a full 180° apart
-    // (e.g. A then C), and jumping the whole view there in a single
-    // frame read as a broken jump-cut rather than a turn. userRotating
-    // is held true for the duration so renderLoop's own sway doesn't
-    // fight this over group.rotation.y at the same time.
-    const fromRotY = group.rotation.y, fromRotX = group.rotation.x;
-    const toRotY = step.type==='precrease-corner'
-      ? nearestEquivalentAngle(fromRotY, CORNER_FACING_ANGLE[step.corner])
-      : fromRotY;
-    if(step.type==='precrease-corner'){
-      baseRotationY = toRotY;
-      userRotating = true;
-      peekFocusCorner = step.corner;
+    const activeCorners = step.type==='precrease-corner' ? [step.corner]
+      : step.type==='unfold-all-corners' ? ['A','B','C','D'] : null;
+    // flipGroup stays unrotated before the flip and fully turned after it
+    // for every step's whole run, except flip-collapsed itself, which
+    // rotates it mid-animation in lockstep with its own progress (tracked
+    // per-tick below). Color follows the same shape (see aForce above):
+    // pinned once pastFlip, except a step's own activeCorners get real
+    // two-sided color for the fold/unfold it's actively swinging through
+    // — settled is false only while that swing is still in progress, so
+    // the very last rendered frame of any step (including a fresh corner
+    // landing back at rest) always resolves to the pinned color, not
+    // whatever gl_FrontFacing happens to say at that specific angle.
+    function updateFlipAndColor(p, settled){
+      if(idx === FLIP_STEP_INDEX){
+        flipGroup.rotation.x = p * Math.PI;
+        setForceColor(settled, null);
+      } else {
+        flipGroup.rotation.x = idx > FLIP_STEP_INDEX ? Math.PI : 0;
+        setForceColor(idx > FLIP_STEP_INDEX, settled ? null : activeCorners);
+      }
     }
-    // Color follows aForce above: every step past the flip is pinned
-    // throughout, corner actively folding included. The flip-collapsed
-    // step itself is the one exception — its own progressive reveal
-    // (turning the settled base tip-up) is confirmed correct dynamically,
-    // so it only pins once settled (t>=1). The collapse step before it
-    // stays fully dynamic the whole way through, same as every step
-    // before that.
-    function updateColor(settled){
-      setForceColor(idx === FLIP_STEP_INDEX ? settled : idx > FLIP_STEP_INDEX);
-    }
-    updateColor(false);
+    updateFlipAndColor(reverse ? 1 : 0, false);
 
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
-      if(step.type==='precrease-corner'){
-        group.rotation.y = fromRotY + (toRotY - fromRotY) * te;
-        group.rotation.x = fromRotX * (1 - te);
-      }
-      updateColor(t>=1);
+      updateFlipAndColor(p, t>=1);
       applyFrame(frameForStep(step, p));
       if(t<1){ requestAnimationFrame(frame); return; }
-      if(step.type==='precrease-corner') userRotating = false;
       onDone();
     }
     requestAnimationFrame(frame);
@@ -1432,24 +1072,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const isUnfold = step.type==='unfold';
       const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
       animateStep(foldStep, isUnfold, ()=>{
-        stepIndex++; animating=false; setButtons(true);
-        // The last frame drawn during animateStep's own loop used the
-        // pre-increment stepIndex, so a reveal gated on stepIndex (e.g.
-        // BASE_FOLD_LINE_INDEX/CREASE_LINE_INDEX becoming visible once
-        // their step is done) wouldn't actually show until some later
-        // redraw. Re-apply the same settled frame now that stepIndex has
-        // moved on, so gating keyed to it takes effect immediately.
-        applyFrame(stateBeforeStep(stepIndex));
-        updatePanel(); resolve();
+        stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
       });
     });
   }
 
   function reset(){
     stepIndex = 0; animating = false;
-    baseRotationY = 0; userRotating = false; group.rotation.set(0, 0, 0);
-    peekFocusCorner = null;
-    setForceColor(false);
+    flipGroup.rotation.x = 0;
+    setForceColor(false, null);
     applyFrame(FLAT);
     updatePanel();
   }
@@ -1463,14 +1094,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     n = Math.max(0, Math.min(n, STEPS.length));
     playing = false; el.playBtn.textContent = '▶ Play all';
     stepIndex = n;
-    // Face the corner about to fold, same as animateStep does — see
-    // CORNER_FACING_ANGLE above.
-    const upcoming = STEPS[n];
-    baseRotationY = (upcoming && upcoming.type==='precrease-corner') ? CORNER_FACING_ANGLE[upcoming.corner] : 0;
-    peekFocusCorner = (upcoming && upcoming.type==='precrease-corner') ? upcoming.corner : null;
-    userRotating = false;
-    group.rotation.set(0, baseRotationY, 0);
-    setForceColor(n > FLIP_STEP_INDEX);
+    flipGroup.rotation.x = n > FLIP_STEP_INDEX ? Math.PI : 0;
+    setForceColor(n > FLIP_STEP_INDEX, null);
     applyFrame(stateBeforeStep(n));
     updatePanel();
   }
