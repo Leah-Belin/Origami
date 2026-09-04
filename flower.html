@@ -185,7 +185,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       </div>
       <div class="panel">
         <div class="panel-top">
-          <span class="step-count" id="stepCount">Step 1 of 16</span>
+          <span class="step-count" id="stepCount">Step 1 of 17</span>
           <span class="badge valley" id="badge">Fold</span>
         </div>
         <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
@@ -509,17 +509,34 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     COLLAPSED_UP[name] = rotateAroundAxisAtOrigin(COLLAPSED[name], COLLAPSED_UP_AXIS, Math.PI);
   });
 
-  // Every step after the collapse (each corner's precrease fold, and any
-  // jump/replay landing on "the collapsed base") reads from this instead
-  // of the idealized COLLAPSED_UP values directly, for the same "stop
-  // just short of the exact endpoint" reason the collapse animation
-  // itself uses pc=min(p,0.98) below: at p=1 every point would sit
-  // exactly on its target, and a few of those targets (Ctr, at the very
-  // end of a corner's own fold) are genuine coincidences the depth test
-  // would otherwise have to break a tie on.
-  const SETTLED = {};
+  // Every step from the flip onward (each corner's precrease fold, and
+  // any jump/replay landing on or past "the flipped base") reads from
+  // SETTLED instead of the idealized COLLAPSED_UP values directly, for
+  // the same "stop just short of the exact endpoint" reason the collapse
+  // animation itself uses pc=min(p,0.98) below: at p=1 every point would
+  // sit exactly on its target, and a few of those targets (Ctr, at the
+  // very end of a corner's own fold) are genuine coincidences the depth
+  // test would otherwise have to break a tie on.
+  //
+  // Built in two stages — SETTLED_DOWN first (closed tip down, matching
+  // where the collapse animation itself actually ends), then SETTLED as
+  // that single consistent shape rotated 180° — rather than lerping
+  // straight toward COLLAPSED_UP. Those two are only the same thing at
+  // the untouched endpoints: partway through a shared animation they're
+  // different paths, since FLAT isn't rotation-invariant, and lerping
+  // each point toward its own already-rotated target isn't a rigid
+  // motion (confirmed against a real capture of that: panels that should
+  // stay attached visibly pulled apart from each other mid-fold). Kept
+  // as two genuinely separate steps below (collapse, then flip-collapsed)
+  // rather than folded into one, for the same reason: even rotating a
+  // single consistent shape is only rigid, not necessarily *matching the
+  // real fold* if blended into the same click as the collapse itself —
+  // that reaches the turn's more face-on angles well before the paper
+  // has actually finished gathering into its 3D shape, showing more of
+  // the hidden white than the real, sequential fold ever does.
+  const SETTLED_DOWN = {};
   ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], 0.98);
+    SETTLED_DOWN[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
   });
   // The lerp above interpolates each secondary layer's neighbor-copy
   // independently from FLAT toward COLLAPSED (where it's exactly on the
@@ -543,13 +560,17 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
-    SETTLED[X+'_'+secondary] = SETTLED.Ctr.clone();
+    SETTLED_DOWN[X+'_'+secondary] = SETTLED_DOWN.Ctr.clone();
   });
-  withCreaseTips(SETTLED);
+  withCreaseTips(SETTLED_DOWN);
   ['A','B','C','D'].forEach(X=>{
     const [n1,n2] = CREASE_NEIGHBORS[X];
     const secondary = PRIMARY_NEIGHBOR[X]===n1 ? n2 : n1;
-    SETTLED[X+'_'+secondary+'_r'] = SETTLED.Ctr.clone();
+    SETTLED_DOWN[X+'_'+secondary+'_r'] = SETTLED_DOWN.Ctr.clone();
+  });
+  const SETTLED = {};
+  Object.keys(SETTLED_DOWN).forEach(name=>{
+    SETTLED[name] = rotateAroundAxisAtOrigin(SETTLED_DOWN[name], COLLAPSED_UP_AXIS, Math.PI);
   });
 
   // ---- Steps ----
@@ -564,7 +585,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, label:'Fold top-right', instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
-    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base, closed tip up and the 4 corners spread below it as an open rim, meeting at one point in the middle — that\'s the hold for working each flap\'s corner next. This is the preliminary base.' },
+    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
+    { type:'flip-collapsed', label:'Flip base up', instruction:'Flip the base over so its closed tip points up and the 4 flaps hang down — that\'s the hold for working each flap\'s corner in turn.' },
     { type:'precrease-corner', corner:'A', label:'Fold corner A', instruction:'Fold flap A\'s loose corner down past the open merge point — this creases the flap along the line it will later open and press flat.' },
     { type:'precrease-corner', corner:'D', label:'Fold corner D', instruction:'Same fold on flap D\'s corner — folding down onto that same central line.' },
     { type:'precrease-corner', corner:'B', label:'Fold corner B', instruction:'Same fold on flap B\'s corner.' },
@@ -580,13 +602,19 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const CORNER_FOLD_STEP_INDEX = {};
   STEPS.forEach((s,i)=>{ if(s.type==='precrease-corner') CORNER_FOLD_STEP_INDEX[s.corner] = i; });
 
-  // Index of the one collapse step — used by aForce/setForceColor below
-  // to decide, at any given moment, whether panels should be pinned to
-  // the confirmed-correct color (once collapsed, the base is complex
-  // enough in 3D that gl_FrontFacing alone isn't reliable from every
-  // viewing angle) or left fully dynamic (every step before the collapse,
-  // where the sheet is still flat/simply-folded enough that it is).
+  // Index of the one collapse step — used below to gate the base's own
+  // fold-line mark, revealed once the base has actually collapsed
+  // regardless of whether it's been turned tip-up yet.
   const COLLAPSE_STEP_INDEX = STEPS.findIndex(s=>s.type==='collapse');
+
+  // Index of the one flip-collapsed step — used by aForce/setForceColor
+  // below to decide, at any given moment, whether panels should be
+  // pinned to the confirmed-correct color (once collapsed and turned
+  // tip-up, the base is complex enough in 3D that gl_FrontFacing alone
+  // isn't reliable from every viewing angle) or left fully dynamic
+  // (every step before that, where the sheet is still flat/simply-folded
+  // enough, or mid-collapse, that it is).
+  const FLIP_STEP_INDEX = STEPS.findIndex(s=>s.type==='flip-collapsed');
 
   // Index of the step that reverses all 4 corner folds at once — used by
   // updatePeekEdgeVisibility below to hide the peek ribbon again once a
@@ -1186,9 +1214,23 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const pc = Math.min(p, 0.98);
       const out = {};
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], pc);
+        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
       });
       return withCreaseTips(out);
+    }
+    if(step.type==='flip-collapsed'){
+      // A rigid 180° turn of the whole settled-but-still-tip-down base —
+      // every point gets exactly the same rotation angle at each instant,
+      // so nothing moves relative to anything else, unlike lerping each
+      // point toward its own already-rotated target (see SETTLED above).
+      // Starts from SETTLED_DOWN, not the live collapse animation's own
+      // in-progress frame, since this is always its own separate step
+      // now, run only once the collapse itself has actually finished.
+      const out = {};
+      Object.keys(SETTLED_DOWN).forEach(name=>{
+        out[name] = rotateAroundAxisAtOrigin(SETTLED_DOWN[name], COLLAPSED_UP_AXIS, p * Math.PI);
+      });
+      return out;
     }
     if(step.type==='precrease-corner'){
       // This flap's corner folds down onto its neighbor's ray from Ctr —
@@ -1287,13 +1329,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       userRotating = true;
       peekFocusCorner = step.corner;
     }
-    // Color follows aForce above: every step past the collapse is pinned
-    // throughout, corner actively folding included. The collapse step
-    // itself is the one exception — its own progressive reveal (FLAT
-    // gathering into the 3D pose) is confirmed correct dynamically, so it
-    // only pins once settled (t>=1), same as before.
+    // Color follows aForce above: every step past the flip is pinned
+    // throughout, corner actively folding included. The flip-collapsed
+    // step itself is the one exception — its own progressive reveal
+    // (turning the settled base tip-up) is confirmed correct dynamically,
+    // so it only pins once settled (t>=1). The collapse step before it
+    // stays fully dynamic the whole way through, same as every step
+    // before that.
     function updateColor(settled){
-      setForceColor(idx === COLLAPSE_STEP_INDEX ? settled : idx > COLLAPSE_STEP_INDEX);
+      setForceColor(idx === FLIP_STEP_INDEX ? settled : idx > FLIP_STEP_INDEX);
     }
     updateColor(false);
 
@@ -1349,11 +1393,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = (step.type==='unfold'||step.type==='unfold-all-corners') ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
+      el.foldBtn.textContent = (step.type==='unfold'||step.type==='unfold-all-corners') ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : (step.type==='flip'||step.type==='flip-collapsed') ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
-        el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose — closed tip up, ready to work the flaps';
+        el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
@@ -1363,6 +1407,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       } else if(step.type==='flip'){
         el.badge.textContent='Flip'; el.badge.className='badge done';
         el.stageCaption.textContent='rigid 180° turn about the vertical crease';
+      } else if(step.type==='flip-collapsed'){
+        el.badge.textContent='Flip'; el.badge.className='badge done';
+        el.stageCaption.textContent='rigid 180° turn of the whole base, closed tip to open tip';
       } else if(step.type==='precrease-corner'){
         el.badge.textContent='Fold'; el.badge.className='badge valley';
         el.stageCaption.textContent=`flap ${step.corner} folding its corner down past the open merge point`;
@@ -1423,7 +1470,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     peekFocusCorner = (upcoming && upcoming.type==='precrease-corner') ? upcoming.corner : null;
     userRotating = false;
     group.rotation.set(0, baseRotationY, 0);
-    setForceColor(n > COLLAPSE_STEP_INDEX);
+    setForceColor(n > FLIP_STEP_INDEX);
     applyFrame(stateBeforeStep(n));
     updatePanel();
   }
