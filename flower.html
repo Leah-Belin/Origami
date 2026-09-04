@@ -495,12 +495,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // holding the base with its closed tip up and the 4 flaps hanging
   // below, meeting at the open merge point in the middle — confirmed
   // against real paper, and the opposite way up from how the collapse
-  // itself naturally settles (COLLAPSED above: closed tip down).
-  // COLLAPSED_UP is that same rigid pose turned 180° about this
-  // arbitrary but fixed horizontal axis (a rotation, not a mirror-image
-  // reflection) — used as the settled tip-up target below and by
-  // anything that needs the idealized endpoint, but NOT as something to
-  // lerp straight toward frame-by-frame (see SETTLED below for why).
+  // itself naturally settles (COLLAPSED above: closed tip down). Rather
+  // than collapsing to COLLAPSED and then turning the result over as a
+  // separate step, COLLAPSED_UP bakes that same 180° turn (about this
+  // arbitrary but fixed horizontal axis, a rigid rotation, not a
+  // mirror-image reflection) directly into the collapse's own target —
+  // one continuous move that settles straight into the tip-up hold —
+  // exactly the fixed relative geometry of COLLAPSED, since a rotation
+  // doesn't change a rigid pose's actual shape, only which way it faces.
   const COLLAPSED_UP_AXIS = new THREE.Vector3(1, 0, 0);
   const COLLAPSED_UP = {};
   Object.keys(COLLAPSED).forEach(name=>{
@@ -515,29 +517,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // exactly on its target, and a few of those targets (Ctr, at the very
   // end of a corner's own fold) are genuine coincidences the depth test
   // would otherwise have to break a tie on.
-  //
-  // Built by lerping toward plain COLLAPSED (still tip-down) and THEN
-  // rotating that single result 180° — not by lerping each point
-  // straight toward its own already-rotated COLLAPSED_UP target. Those
-  // two are only the same thing at the untouched endpoints; partway
-  // through, lerp(A, rotate(B)) and rotate(lerp(A, B)) are different
-  // paths for any point not sitting on the rotation axis, since FLAT
-  // itself isn't rotation-invariant. The frameForStep 'collapse' branch
-  // below hit exactly this: it lerped straight toward COLLAPSED_UP,
-  // which moves every point along its own independent straight line
-  // toward an already-flipped target — not a rigid motion at all, so
-  // panels that should stay attached visibly pulled apart from each
-  // other mid-fold (confirmed against a real capture of the animation
-  // partway through). Rotating a single already-consistent intermediate
-  // shape is rigid by construction: every point gets the exact same
-  // rotation at each instant, so nothing moves relative to anything else
-  // beyond the fold itself. SETTLED here uses the same rotate-after-lerp
-  // form so its values line up exactly with where the fixed animation
-  // actually ends, not a slightly different endpoint.
   const SETTLED = {};
   ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-    const mid = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], 0.98);
-    SETTLED[name] = rotateAroundAxisAtOrigin(mid, COLLAPSED_UP_AXIS, Math.PI);
+    SETTLED[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], 0.98);
   });
   // The lerp above interpolates each secondary layer's neighbor-copy
   // independently from FLAT toward COLLAPSED (where it's exactly on the
@@ -1201,31 +1183,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // not showing on the outside. This is for plain FLAT — the sheet
       // is back the right way up by the time the collapse starts, per
       // the second turn-over in the STEPS array.
-      // Lerp toward plain COLLAPSED (tip-down) first, only THEN turn
-      // that settled result 180° toward tip-up — run as two back-to-back
-      // phases of this one step's animation (no separate click), not
-      // simultaneously. This is a rigid motion either way (rotating a
-      // single already-consistent shape can't tear it, unlike lerping
-      // each point straight toward its own already-rotated COLLAPSED_UP
-      // target — see SETTLED above), but running both at once still
-      // visibly differs from the real fold: this app used to do the
-      // collapse and the turn-over as two separate steps/clicks, and
-      // that sequencing is what was actually confirmed against paper.
-      // Blending the two in parallel reaches the rotation's later,
-      // more face-on angles well before the paper has actually finished
-      // gathering into its 3D shape — showing more of the hidden white
-      // than the real, sequential fold ever does at a comparable point.
-      // Splitting p into the same two phases (2/3 lerp, 1/3 turn — this
-      // step's own 1800ms next to the old separate turn step's default
-      // 900ms) reproduces that original timing exactly, just within one
-      // click instead of two.
-      const LERP_PHASE_END = 2/3;
-      const pc = Math.min(p, LERP_PHASE_END) / LERP_PHASE_END * 0.98;
-      const rotP = Math.max(0, (p - LERP_PHASE_END) / (1 - LERP_PHASE_END));
+      const pc = Math.min(p, 0.98);
       const out = {};
       ['Ctr', ...OUTER, ...LAYER_POINTS].forEach(name=>{
-        const mid = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
-        out[name] = rotateAroundAxisAtOrigin(mid, COLLAPSED_UP_AXIS, rotP * Math.PI);
+        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED_UP[name], pc);
       });
       return withCreaseTips(out);
     }
