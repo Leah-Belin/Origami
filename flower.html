@@ -812,28 +812,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     });
   }
 
-  // Smallest signed distance from angle a to angle b, in (-PI, PI].
-  function angleDelta(a, b){
-    let d = (a - b) % (Math.PI*2);
-    if(d > Math.PI) d -= Math.PI*2;
-    if(d < -Math.PI) d += Math.PI*2;
-    return d;
-  }
-
-  // CORNER_FACING_ANGLE[X] is defined (see above) to put the camera
-  // looking straight at wedge X's own plane edge-on — which is exactly
-  // where gl_FrontFacing has the least real geometry to work with and is
-  // least numerically trustworthy (a sliver of near-zero screen area,
-  // where tiny floating-point differences between GPUs/browsers can flip
-  // which side reads as front). The app rests exactly there right after
-  // folding a corner and whenever it turns to face one, so this is a
-  // known, unavoidable resting spot, not a rare glancing angle. Force
-  // hidden within a small buffer of it — always the semantically correct
-  // answer anyway, since looking straight at a fold's front should never
-  // read as its back — rather than trust gl_FrontFacing in the one zone
-  // where it's least reliable.
-  const EDGE_ON_DEAD_ZONE = 0.12; // radians, ~7°
-
   // Both PEEK_EDGE_PAIRS segments for a corner live in one shared plane
   // (Ctr, creaseTip, neighbor, and — confirmed algebraically and via
   // render — the corner point too, even after that corner's own fold),
@@ -867,8 +845,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // gl_FrontFacing state is always reachable by looking.
       if(stepIndex <= COLLAPSE_STEP_INDEX || stepIndex <= CORNER_FOLD_STEP_INDEX[X] ||
          (UNFOLD_ALL_CORNERS_STEP_INDEX >= 0 && stepIndex >= UNFOLD_ALL_CORNERS_STEP_INDEX) ||
-         (peekFocusCorner !== null && peekFocusCorner !== X) ||
-         Math.abs(angleDelta(group.rotation.y, CORNER_FACING_ANGLE[X])) < EDGE_ON_DEAD_ZONE){
+         (peekFocusCorner !== null && peekFocusCorner !== X)){
         for(let i=0;i<12;i++){
           const idx = (quadBase+i)*3;
           peekRibbonPositions[idx]=Ctr.x; peekRibbonPositions[idx+1]=Ctr.y; peekRibbonPositions[idx+2]=Ctr.z;
@@ -996,8 +973,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // The viewer is driving now — every folded corner's peek should
       // show its true gl_FrontFacing state again, not stay suppressed
       // for whichever corner the automatic navigation was last facing.
-      // renderLoop's own per-frame call picks this up immediately.
       peekFocusCorner = null;
+      updatePeekEdgeVisibility();
       stageEl.classList.add('grabbing');
       hideDragHint();
       lastX = e.clientX; lastY = e.clientY;
@@ -1028,7 +1005,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     else return;
     e.preventDefault();
     if(!userRotating){ userRotating = true; hideDragHint(); }
-    peekFocusCorner = null;
+    if(peekFocusCorner !== null){ peekFocusCorner = null; updatePeekEdgeVisibility(); }
     group.rotation.y += dy;
     group.rotation.x += dx;
   });
@@ -1042,12 +1019,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         group.rotation.y = baseRotationY;
       }
     }
-    // The edge-on dead zone in updatePeekEdgeVisibility (see above) reads
-    // the live group.rotation.y, so it needs recomputing on every frame
-    // the camera can move under — the ambient sway here included, not
-    // just step transitions — or a corner could sit hidden (or shown)
-    // based on a rotation.y that's since moved on.
-    updatePeekEdgeVisibility();
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
