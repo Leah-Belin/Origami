@@ -437,6 +437,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // (e.g. someone just testing the stage, or a mis-tap) used to freeze the
   // ambient sway forever for no benefit.
   const DRAG_THRESHOLD = 4;
+  // Tilt (rotation.x) is clamped just short of straight up/down. Past that
+  // point the model is upside-down relative to the camera, and because yaw
+  // and pitch are applied as independent Euler increments, a further
+  // horizontal drag then visually spins the model opposite to the finger
+  // (the classic gimbal flip). Staying short of vertical keeps yaw always
+  // matching the drag direction; spinning around Y is already enough to
+  // see the paper's back, so this loses no real viewing angle.
+  const TILT_LIMIT = Math.PI/2 - 0.08;
   let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
   let downX = 0, downY = 0, lastX = 0, lastY = 0;
 
@@ -465,7 +473,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
     group.rotation.y += dx * 0.008;
-    group.rotation.x += dy * 0.008;
+    group.rotation.x = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, group.rotation.x + dy * 0.008));
   });
   function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
@@ -488,7 +496,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     e.preventDefault();
     if(!userRotating){ userRotating = true; hideDragHint(); }
     group.rotation.y += dy;
-    group.rotation.x += dx;
+    group.rotation.x = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, group.rotation.x + dx));
   });
 
   function renderLoop(){
