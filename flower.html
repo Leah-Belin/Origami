@@ -437,14 +437,58 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // (e.g. someone just testing the stage, or a mis-tap) used to freeze the
   // ambient sway forever for no benefit.
   const DRAG_THRESHOLD = 4;
-  // Tilt (rotation.x) is clamped just short of straight up/down. Past that
-  // point the model is upside-down relative to the camera, and because yaw
-  // and pitch are applied as independent Euler increments, a further
-  // horizontal drag then visually spins the model opposite to the finger
-  // (the classic gimbal flip). Staying short of vertical keeps yaw always
-  // matching the drag direction; spinning around Y is already enough to
-  // see the paper's back, so this loses no real viewing angle.
+  // Tilt is clamped just short of straight up/down — spinning around Y is
+  // already enough to see the paper's back, so this loses no real viewing
+  // angle, and it keeps the model's own "up" axis from crossing the point
+  // where pitch and yaw start pointing the same way from the camera.
   const TILT_LIMIT = Math.PI/2 - 0.08;
+
+  // The camera never moves, so its own axes are constant for the whole
+  // app's lifetime — computed once, rather than every drag frame.
+  camera.updateMatrixWorld(true);
+  const CAM_RIGHT = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(CAM_RIGHT, new THREE.Vector3(), new THREE.Vector3());
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  // Pitching rotates the up axis within the plane perpendicular to
+  // CAM_RIGHT — its component *along* CAM_RIGHT never changes (that's what
+  // a rotation about an axis preserves), so measuring pitch needs the other
+  // vector spanning that plane, not CAM_RIGHT itself.
+  const PITCH_OTHER = new THREE.Vector3().crossVectors(CAM_RIGHT, WORLD_UP);
+  const LOCAL_UP = new THREE.Vector3(0, 1, 0);
+  const _tmpUp = new THREE.Vector3();
+  const _tmpQuat = new THREE.Quaternion();
+
+  // Reads the model's current pitch directly off its own up axis, rather
+  // than from a running total kept alongside it — correct regardless of
+  // what mix of yaw/pitch drags got it there.
+  function currentPitch(){
+    _tmpUp.copy(LOCAL_UP).applyQuaternion(group.quaternion);
+    return Math.atan2(_tmpUp.dot(PITCH_OTHER), _tmpUp.dot(WORLD_UP));
+  }
+
+  // Orbits the model by camera-relative yaw/pitch deltas (radians), applied
+  // as world-space quaternion rotations (premultiply), not the object's own
+  // local rotation.x/rotation.y. Accumulating independent Euler angles on
+  // the object's own axes (the previous approach) means that once yaw is
+  // nonzero, "pitch" ends up rotating about an axis that's already been
+  // carried along by that yaw — so after flipping the model over by hand,
+  // a further horizontal drag could visibly spin it backwards. Rotating
+  // about the camera's fixed axes instead means a given drag always turns
+  // the visible surface the same way, no matter how the model is currently
+  // oriented.
+  function orbit(yawDelta, pitchDelta){
+    if(yawDelta){
+      group.quaternion.premultiply(_tmpQuat.setFromAxisAngle(WORLD_UP, yawDelta));
+    }
+    if(pitchDelta){
+      const clamped = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, currentPitch() + pitchDelta));
+      const allowed = clamped - currentPitch();
+      if(allowed){
+        group.quaternion.premultiply(_tmpQuat.setFromAxisAngle(CAM_RIGHT, allowed));
+      }
+    }
+  }
+
   let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
   let downX = 0, downY = 0, lastX = 0, lastY = 0;
 
@@ -472,8 +516,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     }
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
     lastX = e.clientX; lastY = e.clientY;
-    group.rotation.y += dx * 0.008;
-    group.rotation.x = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, group.rotation.x + dy * 0.008));
+    orbit(dx * 0.008, dy * 0.008);
   });
   function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
@@ -487,16 +530,15 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // from the ambient sway.
   const KEY_ROTATE_STEP = 0.12;
   stageEl.addEventListener('keydown', (e)=>{
-    let dy = 0, dx = 0;
-    if(e.key==='ArrowLeft') dy = -KEY_ROTATE_STEP;
-    else if(e.key==='ArrowRight') dy = KEY_ROTATE_STEP;
-    else if(e.key==='ArrowUp') dx = -KEY_ROTATE_STEP;
-    else if(e.key==='ArrowDown') dx = KEY_ROTATE_STEP;
+    let yawStep = 0, pitchStep = 0;
+    if(e.key==='ArrowLeft') yawStep = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowRight') yawStep = KEY_ROTATE_STEP;
+    else if(e.key==='ArrowUp') pitchStep = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowDown') pitchStep = KEY_ROTATE_STEP;
     else return;
     e.preventDefault();
     if(!userRotating){ userRotating = true; hideDragHint(); }
-    group.rotation.y += dy;
-    group.rotation.x = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, group.rotation.x + dx));
+    orbit(yawStep, pitchStep);
   });
 
   function renderLoop(){
