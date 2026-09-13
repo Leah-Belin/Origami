@@ -158,6 +158,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
           <button id="foldBtn" class="primary">Fold →</button>
           <button id="playBtn">▶ Play all</button>
         </div>
+        <div class="controls" id="collapseScrubWrap" hidden>
+          <p class="swatch-label">Drag to inspect the collapse frame-by-frame</p>
+          <input type="range" id="collapseScrub" min="0" max="1000" value="0" step="1" style="width:100%">
+        </div>
         <p class="swatch-label">Jump to a step</p>
         <div class="steps-nav" id="stepsNav"></div>
         <p class="swatch-label">Paper color</p>
@@ -604,6 +608,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     instruction: document.getElementById('instruction'),
     foldBtn: document.getElementById('foldBtn'),
     playBtn: document.getElementById('playBtn'),
+    collapseScrubWrap: document.getElementById('collapseScrubWrap'),
+    collapseScrub: document.getElementById('collapseScrub'),
     stepsNav: document.getElementById('stepsNav'),
     stageCaption: document.getElementById('stageCaption'),
     debugNote: document.getElementById('debugNote'),
@@ -626,7 +632,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function animateStep(step, reverse, onDone){
     const isSlow = step.type==='collapse';
-    const duration = reducedMotion ? 1 : (isSlow ? 1800 : 900);
+    const duration = reducedMotion ? 1 : (isSlow ? 6000 : 900);
     const start = performance.now();
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
@@ -654,10 +660,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function setButtonDisabled(btn, off){ btn.setAttribute('aria-disabled', off ? 'true' : 'false'); }
   function isDisabled(btn){ return btn.getAttribute('aria-disabled')==='true'; }
-  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); }
+  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); el.collapseScrub.disabled = !on; }
 
   function updatePanel(){
     const total = STEPS.length;
+    el.collapseScrubWrap.hidden = true;
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
@@ -673,6 +680,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       if(step.type==='collapse'){
         el.badge.textContent='Flat collapse'; el.badge.className='badge collapse';
         el.stageCaption.textContent='Ctr pinned, every ring point driven, relaxed for consistency';
+        el.collapseScrubWrap.hidden = false;
+        el.collapseScrub.value = 0;
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
@@ -742,6 +751,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       await new Promise(r=>setTimeout(r, reducedMotion?50:450));
     }
     playing=false; el.playBtn.textContent='▶ Play all';
+  });
+
+  el.collapseScrub.addEventListener('input', ()=>{
+    if(animating) return;
+    const step = STEPS[stepIndex];
+    if(!step || step.type!=='collapse') return;
+    const p = parseInt(el.collapseScrub.value, 10) / 1000;
+    pbdFrameForStep(step, p, particles);
+    applyFrame(particles, { panelAmounts: COLLAPSE_PANEL_LIFT.map(a=>a*p) });
+    updateDebugNote();
   });
 
   window.__particles = particles;
