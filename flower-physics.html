@@ -229,13 +229,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const FLIPPED_FLAT = {};
   ALL.forEach(n=>{ const p=FLAT[n]; FLIPPED_FLAT[n] = {x:-p.x, y:p.y, z:p.z}; });
 
-  const MERGE_PT = {x:0, y:25, z:0};
-  const R = 50/Math.SQRT2;
-  // Only used to sanity-check the solver's own discovered collapse shape
-  // in the debug footer below — not fed into the solver itself.
+  // The collapse's true rest state, worked out from the actual crease
+  // pattern rather than guessed: Ctr sits on every one of the 4 crease
+  // lines' rotation axes, so it never moves. The 4 edge-midpoints all
+  // land on N's original spot and the 4 corners all land on A's original
+  // spot — the paper folds flat into a single wedge (8 layers stacked),
+  // confirmed against a real folded model. Only used to sanity-check the
+  // solver's own discovered collapse shape in the debug footer below —
+  // not fed into the solver itself.
+  const MID_TARGET = FLAT.N, CORNER_TARGET = FLAT.A;
   const COLLAPSED_REFERENCE = {
-    Ctr:{x:0,y:-25,z:0}, N:MERGE_PT, E:MERGE_PT, S:MERGE_PT, W:MERGE_PT,
-    A:{x:-R,y:25,z:-R}, B:{x:R,y:25,z:-R}, C:{x:R,y:25,z:R}, D:{x:-R,y:25,z:R},
+    Ctr:FLAT.Ctr, N:MID_TARGET, E:MID_TARGET, S:MID_TARGET, W:MID_TARGET,
+    A:CORNER_TARGET, B:CORNER_TARGET, C:CORNER_TARGET, D:CORNER_TARGET,
   };
 
   // ==========================================================================
@@ -312,10 +317,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       return;
     }
     if(step.type==='collapse'){
-      const pc = Math.min(p, 0.98);
-      const driven = ['N','E','S','W'];
-      driven.forEach(n => particles[n] = vadd(FLAT[n], vscale(vsub(MERGE_PT, FLAT[n]), pc)));
-      relax(particles, new Set(driven), 40);
+      // Ctr sits on every crease's rotation axis, so it's pinned, never
+      // driven or discovered. Every ring point gets an explicit target —
+      // midpoints march toward N's original spot, corners toward A's — each
+      // rotated along the great-circle arc from its own flat position so
+      // Ctr-to-point distance stays exactly right the whole way (opposite
+      // corners like A-to-C have no unique shortest arc, so that one case
+      // reuses the same axis every other point naturally rotates around).
+      // Relaxation then cleans up the small residual drift between them
+      // each frame, warm-started from this already-close guess.
+      const pc = Math.min(p, 0.999);
+      particles.Ctr = {...FLAT.Ctr};
+      OUTER.forEach(n=>{
+        const target = (n==='N'||n==='E'||n==='S'||n==='W') ? MID_TARGET : CORNER_TARGET;
+        const from = FLAT[n];
+        if(dist(from, target) < 1e-6){ particles[n] = {...from}; return; }
+        let axis = vcross(from, target);
+        if(vlen(axis) < 1e-6) axis = {x:0,y:1,z:0};
+        const fullAngle = Math.acos(Math.max(-1, Math.min(1, vdot(vnorm(from), vnorm(target)))));
+        particles[n] = rotateAroundAxisAtOrigin(from, axis, pc*fullAngle);
+      });
+      relax(particles, new Set(['Ctr']), 40);
       return;
     }
     const ref = step.ref || FLAT;
@@ -353,7 +375,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, drive:'A', label:'Fold top-right', instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
-    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
+    { type:'collapse', label:'Collapse base', instruction:'Now all 4 creases collapse together. Ctr sits on every crease\'s hinge line, so it never moves; the 4 edge-midpoints all come together at one spot, and the 4 corners all come together at another — the whole model presses completely flat, the way it does with real paper.' },
   ];
 
   // ==========================================================================
@@ -414,14 +436,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // flap reliably draws on top, the way it would in real, non-zero-thickness
   // paper. It never touches `particles`, so the solver keeps working with
   // exact positions.
+  // `panelAmounts`, when given, is a per-PANEL (not per-point) offset —
+  // needed once several panels converge onto the very same spot from
+  // several directions at once (the collapse), where a single point-name
+  // offset would tilt a panel instead of just stacking it.
   function applyFrame(frame, lift){
     const liftPts = lift && lift.points, liftAmt = lift ? lift.amount : 0;
+    const panelAmounts = lift && lift.panelAmounts;
     function liftedY(name, p){ return (liftPts && liftPts.has(name)) ? p.y + liftAmt : p.y; }
     let vi = 0;
-    PANELS.forEach(tri=>{
+    PANELS.forEach((tri, pi)=>{
+      const extra = panelAmounts ? panelAmounts[pi] : 0;
       tri.forEach(name=>{
         const p = frame[name] || FLAT[name];
-        positions[vi*3]=p.x; positions[vi*3+1]=liftedY(name,p); positions[vi*3+2]=p.z;
+        positions[vi*3]=p.x; positions[vi*3+1]=liftedY(name,p)+extra; positions[vi*3+2]=p.z;
         vi++;
       });
     });
@@ -434,11 +462,19 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     lineGeo.attributes.position.needsUpdate = true;
   }
 
+  // The finished collapse stacks all 8 panels into just 2 spots (4 apiece),
+  // so give each panel its own tiny, fixed offset — enough to see it's 8
+  // real layers, not one flat GPU depth-test coin-flip.
+  const COLLAPSE_PANEL_LIFT = PANELS.map((_,i)=> (i - (PANELS.length-1)/2) * 0.15);
+
   // Whichever fold most recently completed (if any) determines whether
   // anything needs lifting in the current, settled/resting state.
   function currentLift(){
     if(stepIndex>0 && STEPS[stepIndex-1].type==='fold'){
       return { points: new Set(STEPS[stepIndex-1].moving), amount: 0.3 };
+    }
+    if(stepIndex>0 && STEPS[stepIndex-1].type==='collapse'){
+      return { panelAmounts: COLLAPSE_PANEL_LIFT };
     }
     return null;
   }
@@ -597,7 +633,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
       pbdFrameForStep(step, p, particles);
-      applyFrame(particles, step.type==='fold' ? { points: new Set(step.moving), amount: p*0.3 } : null);
+      let lift = null;
+      if(step.type==='fold') lift = { points: new Set(step.moving), amount: p*0.3 };
+      else if(step.type==='collapse') lift = { panelAmounts: COLLAPSE_PANEL_LIFT.map(a=>a*p) };
+      applyFrame(particles, lift);
       updateDebugNote();
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
@@ -622,9 +661,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base. Only N/E/S/W were ever told where to go; Ctr and all 4 corners were found by the solver.';
+      el.instruction.textContent='Ctr never moved — it sits on every crease\'s hinge line. The 4 edge-midpoints all landed on N\'s original spot, and the 4 corners all landed on A\'s original spot, so the whole model presses completely flat — the preliminary base.';
       el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
-      el.stageCaption.textContent='preliminary base — collapsed (solver-discovered)';
+      el.stageCaption.textContent='preliminary base — collapsed flat';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
@@ -632,8 +671,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
-        el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
-        el.stageCaption.textContent='4 points driven, 5 points solved by the physics engine';
+        el.badge.textContent='Flat collapse'; el.badge.className='badge collapse';
+        el.stageCaption.textContent='Ctr pinned, every ring point driven, relaxed for consistency';
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
