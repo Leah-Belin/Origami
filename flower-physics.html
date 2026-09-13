@@ -406,12 +406,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
-  function applyFrame(frame){
+  // `lift` is display-only: a folded flap can land exactly coplanar with
+  // the static half underneath it (the physics is correct — the paper
+  // really is two flat layers in the same place), and without help the
+  // GPU's depth test resolves that tie arbitrarily, pixel by pixel. This
+  // nudges the currently-folding points up in world space so the moving
+  // flap reliably draws on top, the way it would in real, non-zero-thickness
+  // paper. It never touches `particles`, so the solver keeps working with
+  // exact positions.
+  function applyFrame(frame, lift){
+    const liftPts = lift && lift.points, liftAmt = lift ? lift.amount : 0;
+    function liftedY(name, p){ return (liftPts && liftPts.has(name)) ? p.y + liftAmt : p.y; }
     let vi = 0;
     PANELS.forEach(tri=>{
       tri.forEach(name=>{
         const p = frame[name] || FLAT[name];
-        positions[vi*3]=p.x; positions[vi*3+1]=p.y; positions[vi*3+2]=p.z;
+        positions[vi*3]=p.x; positions[vi*3+1]=liftedY(name,p); positions[vi*3+2]=p.z;
         vi++;
       });
     });
@@ -419,9 +429,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     geometry.computeVertexNormals();
     LINE_PAIRS.forEach((name,i)=>{
       const p = frame[name] || FLAT[name];
-      linePositions[i*3]=p.x; linePositions[i*3+1]=p.y; linePositions[i*3+2]=p.z;
+      linePositions[i*3]=p.x; linePositions[i*3+1]=liftedY(name,p); linePositions[i*3+2]=p.z;
     });
     lineGeo.attributes.position.needsUpdate = true;
+  }
+
+  // Whichever fold most recently completed (if any) determines whether
+  // anything needs lifting in the current, settled/resting state.
+  function currentLift(){
+    if(stepIndex>0 && STEPS[stepIndex-1].type==='fold'){
+      return { points: new Set(STEPS[stepIndex-1].moving), amount: 0.3 };
+    }
+    return null;
   }
 
   applyFrame(FLAT);
@@ -578,7 +597,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
       pbdFrameForStep(step, p, particles);
-      applyFrame(particles);
+      applyFrame(particles, step.type==='fold' ? { points: new Set(step.moving), amount: p*0.3 } : null);
       updateDebugNote();
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
@@ -659,7 +678,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     playing = false; el.playBtn.textContent = '▶ Play all';
     stepIndex = n;
     settleUpToStep(n);
-    applyFrame(particles);
+    applyFrame(particles, currentLift());
     updatePanel();
   }
   el.stepsNav.addEventListener('click', (e)=>{
