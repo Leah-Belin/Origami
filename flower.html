@@ -490,7 +490,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     }
   }
 
-  let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
+  let userRotating = false, pointerActive = false, dragging = false;
   let downX = 0, downY = 0, lastX = 0, lastY = 0;
 
   const dragHintEl = document.getElementById('dragHint');
@@ -543,10 +543,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   });
 
   function renderLoop(){
-    if(!userRotating && !reducedMotion){
-      autoRotate += 0.003;
-      group.rotation.y = Math.sin(autoRotate) * 0.35;
-    }
     renderer.render(scene, camera);
     requestAnimationFrame(renderLoop);
   }
