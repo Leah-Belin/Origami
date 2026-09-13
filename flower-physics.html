@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fold Along — Flower base (physics engine)</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root{
+  --bg:#EAE7DD;
+  --surface:#FFFFFF;
+  --surface-2:#F2EFE6;
+  --ink:#20242A;
+  --ink-muted:#5B6169;
+  --border:#D7D2C4;
+  --mat:#DAD5C7;
+  --accent-valley:#C1442D;
+  --accent-valley-soft:#F4DED7;
+  --accent-mountain:#2B6E77;
+  --accent-mountain-soft:#DCE9E8;
+  --paper-front:#C1442D;
+  --paper-back:#F2EEE3;
+  --shadow: rgba(32,28,22,.20);
+  --focus:#2B6E77;
+  --badge-valley-fg:#A23821;
+  --badge-collapse-fg:#2B6E77;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1A1D22; --surface:#23262D; --surface-2:#2A2D35;
+    --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
+    --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
+    --shadow: rgba(0,0,0,.55);
+    --badge-valley-fg:#E8836B; --badge-collapse-fg:#4FB0BA;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#1A1D22; --surface:#23262D; --surface-2:#2A2D35;
+  --ink:#ECE9E2; --ink-muted:#9CA3AC; --border:#3A3E47; --mat:#2A2D34;
+  --accent-valley-soft:#3B2622; --accent-mountain-soft:#1D3033;
+  --shadow: rgba(0,0,0,.55);
+  --badge-valley-fg:#E8836B; --badge-collapse-fg:#4FB0BA;
+}
+
+*{box-sizing:border-box;}
+body{ margin:0; background:var(--bg); color:var(--ink); font-family:'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing:antialiased; }
+
+.site-bar{ border-bottom:1px solid var(--border); }
+.site-bar-inner{ max-width:1080px; margin:0 auto; padding:1.1rem 1.5rem; display:flex; align-items:baseline; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+.site-title{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:1rem; color:var(--ink); text-decoration:none; }
+.site-nav{ display:flex; gap:.8rem; }
+.site-nav a{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.04em; color:var(--ink-muted); text-decoration:none; display:inline-block; padding:.85rem .3rem; margin:-.85rem -.3rem; border-radius:6px; }
+.site-nav a:hover{ color:var(--ink); }
+.site-nav a.current{ color:var(--accent-mountain); }
+
+.wrap{ max-width:1080px; margin:0 auto; padding:2.5rem 1.5rem 4rem; }
+header{ margin-bottom:.6rem; }
+h1{ font-family:'Unbounded', sans-serif; font-weight:700; font-size:clamp(1.7rem, 3.4vw, 2.35rem); line-height:1.12; margin:0; text-wrap:balance; }
+.progress-note{ margin:.5rem 0 1.9rem; color:var(--ink-muted); font-size:.92rem; line-height:1.55; max-width:60ch; }
+.progress-note strong{ color:var(--ink); font-weight:600; }
+
+.board{ display:grid; grid-template-columns: minmax(320px, 480px) 1fr; gap:1.75rem; align-items:start; }
+@media (max-width: 780px), (max-height: 500px) and (orientation: landscape){
+  .board{ grid-template-columns: 1fr; }
+}
+@media (max-height: 500px) and (orientation: landscape){
+  .wrap{ padding:1.2rem 1.2rem 2rem; }
+  header{ margin-bottom:1rem; }
+}
+
+.stage-card{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.25rem; box-shadow: 0 1px 2px var(--shadow); }
+.stage-outer{ position:relative; aspect-ratio:1/1; border-radius:8px; background:var(--mat); overflow:hidden; cursor:grab; touch-action:none; }
+.stage-outer.grabbing{ cursor:grabbing; }
+.stage-outer:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+.stage-outer canvas{ display:block; width:100%; height:100%; }
+@media (max-height: 500px) and (orientation: landscape){
+  .stage-outer{ aspect-ratio:auto; height:34vh; }
+}
+.drag-hint{ position:absolute; left:50%; bottom:.7rem; transform:translateX(-50%); display:flex; align-items:center; gap:.35rem; background:rgba(20,18,14,.62); color:#fff; font-family:'IBM Plex Mono', monospace; font-size:.68rem; letter-spacing:.03em; padding:.4rem .75rem; border-radius:99px; pointer-events:none; opacity:1; transition:opacity .5s ease; white-space:nowrap; }
+.drag-hint.is-hidden{ opacity:0; }
+.stage-caption{ margin-top:.85rem; font-family:'IBM Plex Mono', monospace; font-size:.74rem; color:var(--ink-muted); text-align:center; }
+
+.panel{ background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:1.5rem 1.6rem 1.7rem; box-shadow: 0 1px 2px var(--shadow); }
+.panel-top{ display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1.1rem; }
+.step-count{ font-family:'IBM Plex Mono', monospace; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); }
+.badge{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; padding:.3rem .6rem; border-radius:99px; white-space:nowrap; }
+.badge.valley{ background:var(--accent-valley-soft); color:var(--badge-valley-fg); }
+.badge.collapse{ background:var(--accent-mountain-soft); color:var(--badge-collapse-fg); }
+.badge.done{ background:var(--surface-2); color:var(--ink-muted); }
+
+.instruction{ font-family:'Unbounded', sans-serif; font-weight:600; font-size:1.22rem; line-height:1.35; margin:0 0 1.3rem; text-wrap:balance; min-height:3.6rem; }
+
+.controls{ display:flex; gap:.6rem; margin-bottom:1.1rem; flex-wrap:wrap; }
+button{ font-family:'IBM Plex Sans', sans-serif; font-size:.88rem; font-weight:500; padding:.85rem 1.05rem; min-height:44px; border-radius:9px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink); cursor:pointer; touch-action:manipulation; transition: background .15s ease, transform .1s ease, opacity .15s ease; }
+button:hover:not(:disabled):not([aria-disabled="true"]){ background:var(--border); }
+button:active:not(:disabled):not([aria-disabled="true"]){ transform: scale(.97); }
+button:disabled, button[aria-disabled="true"]{ opacity:.4; cursor:default; pointer-events:none; }
+button:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+button.primary{ background:var(--accent-mountain); border-color:var(--accent-mountain); color:#fff; }
+button.primary:hover:not(:disabled){ background:#255e66; }
+
+.steps-nav{ display:flex; gap:.5rem; flex-wrap:wrap; }
+.step-chip{ font-family:'IBM Plex Sans', sans-serif; font-size:.76rem; font-weight:500; padding:.5rem .75rem; min-height:36px; border-radius:99px; border:1px solid var(--border); background:var(--surface-2); color:var(--ink-muted); cursor:pointer; white-space:nowrap; }
+.step-chip:hover:not(:disabled):not([aria-disabled="true"]){ background:var(--border); color:var(--ink); }
+.step-chip.done{ background:var(--accent-mountain-soft); color:var(--ink); border-color:transparent; }
+.step-chip.current{ background:var(--accent-mountain); color:#fff; border-color:var(--accent-mountain); }
+.step-chip.current:hover:not(:disabled):not([aria-disabled="true"]){ background:var(--accent-mountain); color:#fff; }
+
+.swatch-label{ font-family:'IBM Plex Mono', monospace; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); margin:1.3rem 0 .7rem; }
+.swatches{ display:flex; gap:1rem; flex-wrap:wrap; }
+.swatch{ width:28px; height:28px; min-height:28px; padding:0; border-radius:50%; border:2px solid transparent; box-shadow:inset 0 0 0 1px rgba(0,0,0,.12); cursor:pointer; position:relative; }
+.swatch::after{ content:''; position:absolute; inset:-8px; }
+.swatch:hover{ transform:scale(1.08); }
+.swatch.active{ border-color:var(--ink); }
+.swatch:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+
+.debug-note{ margin-top:1.3rem; padding-top:1.1rem; border-top:1px dashed var(--border); font-family:'IBM Plex Mono', monospace; font-size:.72rem; color:var(--ink-muted); line-height:1.6; }
+.debug-note b{ color:var(--ink); }
+</style>
+</head>
+<body>
+
+<div class="site-bar">
+  <div class="site-bar-inner">
+    <span class="site-title">Fold Along</span>
+    <nav class="site-nav">
+      <a href="index.html">Waterbomb base</a>
+      <a href="flower.html">Flower base</a>
+      <a href="flower-physics.html" class="current" aria-current="page">Flower base (physics)</a>
+    </nav>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<div class="wrap">
+  <header>
+    <h1>Flower base (physics engine)</h1>
+  </header>
+  <p class="progress-note">Same preliminary base as the other <strong>Flower base</strong> page, but built on a different foundation: instead of a hand-derived rotation formula for every fold, most points here are found by a small physics-style solver — every original paper edge is a fixed-length constraint, a handful of points are driven each step, and everything else is discovered by the solver from rigidity alone. This is the base for adding new folds (like petal folds) without re-deriving closed-form geometry each time.</p>
+
+  <main>
+    <div class="board">
+      <div class="stage-card">
+        <div class="stage-outer" id="stage" tabindex="0" role="application" aria-label="3D model of the flower base fold, draggable to rotate — use arrow keys when focused to rotate.">
+          <div class="drag-hint" id="dragHint" aria-hidden="true">↻ Drag to rotate</div>
+        </div>
+        <p class="stage-caption" id="stageCaption">square sheet, flat</p>
+      </div>
+      <div class="panel">
+        <div class="panel-top">
+          <span class="step-count" id="stepCount">Step 1 of 11</span>
+          <span class="badge valley" id="badge">Fold</span>
+        </div>
+        <p class="instruction" id="instruction" aria-live="polite" aria-atomic="true"></p>
+        <div class="controls">
+          <button id="foldBtn" class="primary">Fold →</button>
+          <button id="playBtn">▶ Play all</button>
+        </div>
+        <p class="swatch-label">Jump to a step</p>
+        <div class="steps-nav" id="stepsNav"></div>
+        <p class="swatch-label">Paper color</p>
+        <div class="swatches" id="swatches"></div>
+        <p class="debug-note" id="debugNote"></p>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ==========================================================================
+  // Geometry-only vector helpers (plain {x,y,z} objects, not THREE.Vector3).
+  // The solver below works entirely in plain objects so it matches, term for
+  // term, the version already validated numerically outside the browser.
+  // ==========================================================================
+  function vsub(a,b){ return {x:a.x-b.x,y:a.y-b.y,z:a.z-b.z}; }
+  function vadd(a,b){ return {x:a.x+b.x,y:a.y+b.y,z:a.z+b.z}; }
+  function vscale(a,s){ return {x:a.x*s,y:a.y*s,z:a.z*s}; }
+  function vdot(a,b){ return a.x*b.x+a.y*b.y+a.z*b.z; }
+  function vcross(a,b){ return {x:a.y*b.z-a.z*b.y, y:a.z*b.x-a.x*b.z, z:a.x*b.y-a.y*b.x}; }
+  function vlen(a){ return Math.sqrt(vdot(a,a)); }
+  function vnorm(a){ const l=vlen(a)||1; return {x:a.x/l,y:a.y/l,z:a.z/l}; }
+  function dist(a,b){ return vlen(vsub(a,b)); }
+  function rotateAroundAxisAtOrigin(v, axisDir, angleRad){
+    const axis = vnorm(axisDir);
+    const cosA = Math.cos(angleRad), sinA = Math.sin(angleRad);
+    const t1 = vscale(v, cosA);
+    const t2 = vscale(vcross(axis, v), sinA);
+    const t3 = vscale(axis, vdot(axis, v) * (1 - cosA));
+    return vadd(vadd(t1, t2), t3);
+  }
+  // General-purpose primitive: given 3 anchor points and known distances
+  // from each to an unknown 4th point, solve for it exactly (closed form —
+  // no iteration, no convergence risk). Picks whichever of the two mirror
+  // solutions is closer to `hint` (the previous frame's position), so an
+  // animated sequence tracks the same continuous branch throughout.
+  function trilaterate(p1, d1, p2, d2, p3, d3, hint){
+    const ex = vnorm(vsub(p2, p1));
+    const p13 = vsub(p3, p1);
+    const i = vdot(ex, p13);
+    const ey = vnorm(vsub(p13, vscale(ex, i)));
+    const ez = vcross(ex, ey);
+    const d = dist(p1, p2);
+    const j = vdot(ey, p13);
+    const x = (d1*d1 - d2*d2 + d*d) / (2*d);
+    const y = (d1*d1 - d3*d3 + i*i + j*j - 2*i*x) / (2*j);
+    const zSq = Math.max(0, d1*d1 - x*x - y*y);
+    const z = Math.sqrt(zSq);
+    const base = vadd(p1, vadd(vscale(ex, x), vscale(ey, y)));
+    const solA = vadd(base, vscale(ez, z));
+    const solB = vsub(base, vscale(ez, z));
+    return dist(solA, hint) <= dist(solB, hint) ? solA : solB;
+  }
+
+  // ==========================================================================
+  // Geometry: same 9 named points as the formula-based Flower base page.
+  // ==========================================================================
+  const OUTER = ['A','N','B','E','C','S','D','W'];
+  const ALL = ['Ctr', ...OUTER];
+  const FLAT = {
+    Ctr:{x:0,y:0,z:0},
+    A:{x:-50,y:0,z:-50}, B:{x:50,y:0,z:-50}, C:{x:50,y:0,z:50}, D:{x:-50,y:0,z:50},
+    N:{x:0,y:0,z:-50}, E:{x:50,y:0,z:0}, S:{x:0,y:0,z:50}, W:{x:-50,y:0,z:0},
+  };
+  const FLIPPED_FLAT = {};
+  ALL.forEach(n=>{ const p=FLAT[n]; FLIPPED_FLAT[n] = {x:-p.x, y:p.y, z:p.z}; });
+
+  const MERGE_PT = {x:0, y:25, z:0};
+  const R = 50/Math.SQRT2;
+  // Only used to sanity-check the solver's own discovered collapse shape
+  // in the debug footer below — not fed into the solver itself.
+  const COLLAPSED_REFERENCE = {
+    Ctr:{x:0,y:-25,z:0}, N:MERGE_PT, E:MERGE_PT, S:MERGE_PT, W:MERGE_PT,
+    A:{x:-R,y:25,z:-R}, B:{x:R,y:25,z:-R}, C:{x:R,y:25,z:R}, D:{x:-R,y:25,z:R},
+  };
+
+  // ==========================================================================
+  // The solver: every one of the paper's real (unstretchable) edges becomes
+  // a fixed-length constraint. That alone makes each of the 8 triangular
+  // panels individually rigid (3 fixed side lengths fully determine a flat
+  // triangle) — no separate flatness/angle constraint is needed.
+  // ==========================================================================
+  const constraints = [];
+  OUTER.forEach(n => constraints.push(['Ctr', n, dist(FLAT.Ctr, FLAT[n])]));
+  for(let i=0;i<OUTER.length;i++){
+    const a = OUTER[i], b = OUTER[(i+1)%OUTER.length];
+    constraints.push([a, b, dist(FLAT[a], FLAT[b])]);
+  }
+  const restLen = {};
+  constraints.forEach(([a,b,r])=>{ restLen[a+'|'+b]=r; restLen[b+'|'+a]=r; });
+  function neighborsOf(name){
+    const idx = OUTER.indexOf(name);
+    return [OUTER[(idx-1+OUTER.length)%OUTER.length], OUTER[(idx+1)%OUTER.length]];
+  }
+
+  // Iterative constraint relaxation (Gauss-Seidel projection) — used only
+  // for the genuinely coupled, underdetermined collapse (4 driven points,
+  // 5 mutually-dependent free points with no single point having 3 known
+  // neighbors up front). Warm-started from the previous frame each call.
+  function relax(points, pinnedSet, iterations){
+    for(let iter=0; iter<iterations; iter++){
+      for(const [ni,nj,rest] of constraints){
+        const pi = points[ni], pj = points[nj];
+        const delta = vsub(pj,pi);
+        const d = vlen(delta);
+        if(d<1e-9) continue;
+        const diff = (d-rest)/d;
+        const iP = pinnedSet.has(ni), jP = pinnedSet.has(nj);
+        if(iP && jP) continue;
+        if(iP) points[nj] = vsub(pj, vscale(delta, diff));
+        else if(jP) points[ni] = vadd(pi, vscale(delta, diff));
+        else { points[ni] = vadd(pi, vscale(delta, 0.5*diff)); points[nj] = vsub(pj, vscale(delta, 0.5*diff)); }
+      }
+    }
+  }
+
+  function axisForStep(step){
+    if(step._axis) return step._axis;
+    const ref = step.ref || FLAT;
+    const a = ref[step.crease[0]], b = ref[step.crease[1]];
+    const axisDir = vsub(b, a);
+    const probe = rotateAroundAxisAtOrigin(ref[step.moving[0]], axisDir, 0.05);
+    const out = probe.y < ref[step.moving[0]].y ? vscale(axisDir, -1) : axisDir;
+    step._axis = out;
+    return out;
+  }
+
+  // Computes this step's point positions at completion-fraction p, given
+  // the CURRENT persistent particle state (so free points warm-start from
+  // wherever they last settled, not from scratch every frame).
+  //
+  //  - 'flip': the whole sheet turns together as one rigid body — every
+  //    point's position is fully known, nothing to discover.
+  //  - 'collapse': N/E/S/W are driven to the merge point; Ctr and the 4
+  //    corners are genuinely free and solved by iterative relaxation.
+  //  - 'fold': the crease points and everything NOT in `moving` are pinned
+  //    at their current (unmoving) position. Exactly one of the moving
+  //    points (`drive`) follows a known rotation; the other one or two
+  //    moving points each have exactly 3 now-known neighbors (Ctr + their
+  //    two ring neighbors), so they're solved by exact trilateration —
+  //    no iteration, no convergence risk.
+  function pbdFrameForStep(step, p, particles){
+    if(step.type==='flip'){
+      const angleRad = p*Math.PI;
+      const axis = {x:0,y:0,z:1};
+      const from = step.from || FLAT;
+      ALL.forEach(n => particles[n] = rotateAroundAxisAtOrigin(from[n], axis, angleRad));
+      return;
+    }
+    if(step.type==='collapse'){
+      const pc = Math.min(p, 0.98);
+      const driven = ['N','E','S','W'];
+      driven.forEach(n => particles[n] = vadd(FLAT[n], vscale(vsub(MERGE_PT, FLAT[n]), pc)));
+      relax(particles, new Set(driven), 40);
+      return;
+    }
+    const ref = step.ref || FLAT;
+    const angleRad = p*Math.PI;
+    const axisDir = axisForStep(step);
+    particles.Ctr = {...ref.Ctr};
+    OUTER.forEach(n=>{ if(!step.moving.includes(n)) particles[n] = {...ref[n]}; });
+    particles[step.drive] = rotateAroundAxisAtOrigin(ref[step.drive], axisDir, angleRad);
+    const free = step.moving.filter(n=>n!==step.drive);
+    free.forEach(name=>{
+      const [nb1, nb2] = neighborsOf(name);
+      const anchors = ['Ctr', nb1, nb2];
+      const [a1,a2,a3] = anchors;
+      particles[name] = trilaterate(
+        particles[a1], restLen[name+'|'+a1],
+        particles[a2], restLen[name+'|'+a2],
+        particles[a3], restLen[name+'|'+a3],
+        particles[name] || ref[name]
+      );
+    });
+  }
+
+  // ---- Steps: same instructional content as the formula-based page, plus
+  // a `drive` field on each 'fold' step naming the one point the solver is
+  // told to move directly (the point exactly on the axis perpendicular to
+  // the crease) — the rest of that step's moving points are discovered.
+  const STEPS = [
+    { type:'fold', crease:['W','E'], moving:['N','A','B'], drive:'N', label:'Fold top down', instruction:'Fold the top down to the bottom, creating a horizontal center crease.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'fold', crease:['N','S'], moving:['E','B','C'], drive:'E', label:'Fold right side', instruction:'Fold the right side to the left side, creating a vertical center crease.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'flip', from:FLAT, label:'Flip over', instruction:'Turn the paper over — this lets both diagonal creases fold the same easy way as the last two.' },
+    { type:'fold', crease:['A','C'], moving:['B','N','E'], ref:FLIPPED_FLAT, drive:'B', label:'Fold top-left', instruction:'Fold the top-left corner to the bottom-right corner, creating a diagonal crease.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'fold', crease:['B','D'], moving:['A','N','W'], ref:FLIPPED_FLAT, drive:'A', label:'Fold top-right', instruction:'Fold the top-right corner to the bottom-left corner, creating the other diagonal crease.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
+    { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
+    { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
+  ];
+
+  // ==========================================================================
+  // Three.js scene — identical to the formula-based page.
+  // ==========================================================================
+  const stageEl = document.getElementById('stage');
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(46, 1, 50, 500);
+  camera.position.set(100, 55, 115);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  stageEl.appendChild(renderer.domElement);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const dir1 = new THREE.DirectionalLight(0xffffff, 0.7); dir1.position.set(100,150,100); scene.add(dir1);
+  const dir2 = new THREE.DirectionalLight(0xffffff, 0.35); dir2.position.set(-100,-50,-100); scene.add(dir2);
+
+  const PANELS = [];
+  for(let i=0;i<OUTER.length;i++) PANELS.push(['Ctr', OUTER[(i+1)%OUTER.length], OUTER[i]]);
+  const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
+  const LINE_PAIRS = [];
+  OUTER.forEach(n=>LINE_PAIRS.push('Ctr',n));
+  for(let i=0;i<OUTER.length;i++) LINE_PAIRS.push(OUTER[i], OUTER[(i+1)%OUTER.length]);
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(PANELS.length * 3 * 3);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const colorUniforms = { uFront: { value: new THREE.Color(...WHITE) }, uBack: { value: new THREE.Color(...RED) } };
+  const paperMat = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness:0.85, metalness:0.05, flatShading:true });
+  paperMat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, colorUniforms);
+    shader.fragmentShader = 'uniform vec3 uFront;\nuniform vec3 uBack;\n' + shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      diffuseColor.rgb = gl_FrontFacing ? uFront : uBack;`
+    );
+  };
+  const paperMesh = new THREE.Mesh(geometry, paperMat);
+  group.add(paperMesh);
+
+  const linePositions = new Float32Array(LINE_PAIRS.length * 3);
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(linePositions, 3));
+  const lineMat = new THREE.LineBasicMaterial({ color: 0x20242A, transparent:true, opacity:0.4 });
+  const lines = new THREE.LineSegments(lineGeo, lineMat);
+  group.add(lines);
+
+  function applyFrame(frame){
+    let vi = 0;
+    PANELS.forEach(tri=>{
+      tri.forEach(name=>{
+        const p = frame[name] || FLAT[name];
+        positions[vi*3]=p.x; positions[vi*3+1]=p.y; positions[vi*3+2]=p.z;
+        vi++;
+      });
+    });
+    geometry.attributes.position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    LINE_PAIRS.forEach((name,i)=>{
+      const p = frame[name] || FLAT[name];
+      linePositions[i*3]=p.x; linePositions[i*3+1]=p.y; linePositions[i*3+2]=p.z;
+    });
+    lineGeo.attributes.position.needsUpdate = true;
+  }
+
+  applyFrame(FLAT);
+
+  function resize(){
+    const w = stageEl.clientWidth, h = stageEl.clientHeight;
+    if(!w || !h) return;
+    renderer.setSize(w, h, false);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  new ResizeObserver(resize).observe(stageEl);
+  resize();
+
+  // ---- Drag-to-rotate: identical camera-relative quaternion approach as
+  // the formula-based page (see its own comments for why).
+  const DRAG_THRESHOLD = 4;
+  const TILT_LIMIT = Math.PI/2 - 0.08;
+  camera.updateMatrixWorld(true);
+  const CAM_RIGHT = new THREE.Vector3();
+  camera.matrixWorld.extractBasis(CAM_RIGHT, new THREE.Vector3(), new THREE.Vector3());
+  const WORLD_UP = new THREE.Vector3(0, 1, 0);
+  const PITCH_OTHER = new THREE.Vector3().crossVectors(CAM_RIGHT, WORLD_UP);
+  const LOCAL_UP = new THREE.Vector3(0, 1, 0);
+  const _tmpUp = new THREE.Vector3();
+  const _tmpQuat = new THREE.Quaternion();
+  function currentPitch(){
+    _tmpUp.copy(LOCAL_UP).applyQuaternion(group.quaternion);
+    return Math.atan2(_tmpUp.dot(PITCH_OTHER), _tmpUp.dot(WORLD_UP));
+  }
+  function orbit(yawDelta, pitchDelta){
+    if(yawDelta) group.quaternion.premultiply(_tmpQuat.setFromAxisAngle(WORLD_UP, yawDelta));
+    if(pitchDelta){
+      const clamped = Math.max(-TILT_LIMIT, Math.min(TILT_LIMIT, currentPitch() + pitchDelta));
+      const allowed = clamped - currentPitch();
+      if(allowed) group.quaternion.premultiply(_tmpQuat.setFromAxisAngle(CAM_RIGHT, allowed));
+    }
+  }
+
+  let autoRotate = 0, userRotating = false, pointerActive = false, dragging = false;
+  let downX = 0, downY = 0, lastX = 0, lastY = 0;
+  const dragHintEl = document.getElementById('dragHint');
+  function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
+
+  stageEl.addEventListener('pointerdown', (e)=>{
+    pointerActive = true; dragging = false;
+    downX = lastX = e.clientX; downY = lastY = e.clientY;
+    stageEl.setPointerCapture(e.pointerId);
+  });
+  stageEl.addEventListener('pointermove', (e)=>{
+    if(!pointerActive) return;
+    if(!dragging){
+      const totalDx = e.clientX - downX, totalDy = e.clientY - downY;
+      if(Math.hypot(totalDx, totalDy) < DRAG_THRESHOLD) return;
+      dragging = true; userRotating = true;
+      stageEl.classList.add('grabbing'); hideDragHint();
+      lastX = e.clientX; lastY = e.clientY;
+      return;
+    }
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    orbit(dx * 0.008, dy * 0.008);
+  });
+  function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
+  stageEl.addEventListener('pointerup', endDrag);
+  stageEl.addEventListener('pointercancel', endDrag);
+  stageEl.addEventListener('pointerleave', endDrag);
+
+  const KEY_ROTATE_STEP = 0.12;
+  stageEl.addEventListener('keydown', (e)=>{
+    let yawStep = 0, pitchStep = 0;
+    if(e.key==='ArrowLeft') yawStep = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowRight') yawStep = KEY_ROTATE_STEP;
+    else if(e.key==='ArrowUp') pitchStep = -KEY_ROTATE_STEP;
+    else if(e.key==='ArrowDown') pitchStep = KEY_ROTATE_STEP;
+    else return;
+    e.preventDefault();
+    if(!userRotating){ userRotating = true; hideDragHint(); }
+    orbit(yawStep, pitchStep);
+  });
+
+  function renderLoop(){
+    if(!userRotating && !reducedMotion){
+      autoRotate += 0.003;
+      group.rotation.y = Math.sin(autoRotate) * 0.35;
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(renderLoop);
+  }
+  renderLoop();
+
+  // ---- Paper color ----
+  const PAPER_COLORS = [
+    { name:'Red',    hex:'#C1442D' }, { name:'Orange', hex:'#D97A34' },
+    { name:'Yellow', hex:'#D9B23C' }, { name:'Green',  hex:'#4C8C6B' },
+    { name:'Blue',   hex:'#3B6FA0' }, { name:'Purple', hex:'#7A5A9E' },
+    { name:'Pink',   hex:'#C97B94' }, { name:'Black',  hex:'#2B2E33' },
+  ];
+  const swatchesEl = document.getElementById('swatches');
+  function setPaperColor(hex, save){
+    colorUniforms.uBack.value.set(hex);
+    swatchesEl.querySelectorAll('.swatch').forEach(b=>{
+      b.classList.toggle('active', b.dataset.hex.toLowerCase()===hex.toLowerCase());
+    });
+    if(save){ try{ localStorage.setItem('foldalong-paper-color', hex); }catch(e){} }
+  }
+  swatchesEl.innerHTML = PAPER_COLORS.map(c=>
+    `<button class="swatch" style="background:${c.hex}" data-hex="${c.hex}" aria-label="${c.name}" title="${c.name}"></button>`
+  ).join('');
+  swatchesEl.querySelectorAll('.swatch').forEach(btn=>{
+    btn.addEventListener('click', ()=> setPaperColor(btn.dataset.hex, true));
+  });
+  let savedColor = null;
+  try{ savedColor = localStorage.getItem('foldalong-paper-color'); }catch(e){}
+  setPaperColor(savedColor || PAPER_COLORS[0].hex, false);
+
+  // ==========================================================================
+  // Playback: the persistent solver state (`particles`) carries free points'
+  // positions across frames AND across steps — that's what "warm-starting"
+  // means here. It's reset to FLAT only on an explicit Replay.
+  // ==========================================================================
+  let stepIndex = 0, animating = false, playing = false;
+  let particles = {}; ALL.forEach(n => particles[n] = {...FLAT[n]});
+
+  const el = {
+    stepCount: document.getElementById('stepCount'),
+    badge: document.getElementById('badge'),
+    instruction: document.getElementById('instruction'),
+    foldBtn: document.getElementById('foldBtn'),
+    playBtn: document.getElementById('playBtn'),
+    stepsNav: document.getElementById('stepsNav'),
+    stageCaption: document.getElementById('stageCaption'),
+    debugNote: document.getElementById('debugNote'),
+  };
+
+  function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+
+  // Jump-to-step needs the FULL state at an arbitrary step boundary, which
+  // may be far from wherever `particles` currently sits — running the
+  // animation step-by-step from scratch (rather than one big solver jump)
+  // keeps every free point on the correct, continuously-tracked branch.
+  function settleUpToStep(n){
+    ALL.forEach(name => particles[name] = {...FLAT[name]});
+    for(let i=0;i<n;i++){
+      const step = STEPS[i];
+      if(step.type==='unfold') continue; // net no-op on the settled state
+      for(let f=1; f<=24; f++) pbdFrameForStep(step, f/24, particles);
+    }
+  }
+
+  function animateStep(step, reverse, onDone){
+    const isSlow = step.type==='collapse';
+    const duration = reducedMotion ? 1 : (isSlow ? 1800 : 900);
+    const start = performance.now();
+    function frame(now){
+      let t = Math.min(1, (now-start)/duration);
+      const te = easeInOut(t);
+      const p = reverse ? (1-te) : te;
+      pbdFrameForStep(step, p, particles);
+      applyFrame(particles);
+      updateDebugNote();
+      if(t<1){ requestAnimationFrame(frame); return; }
+      onDone();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function updateDebugNote(){
+    let maxEdgeErr = 0;
+    constraints.forEach(([a,b,rest])=>{
+      maxEdgeErr = Math.max(maxEdgeErr, Math.abs(dist(particles[a], particles[b]) - rest));
+    });
+    el.debugNote.innerHTML = `<b>Solver check:</b> max edge-length drift this frame: ${maxEdgeErr.toExponential(2)} (paper should never stretch — this should stay tiny)`;
+  }
+
+  function setButtonDisabled(btn, off){ btn.setAttribute('aria-disabled', off ? 'true' : 'false'); }
+  function isDisabled(btn){ return btn.getAttribute('aria-disabled')==='true'; }
+  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); }
+
+  function updatePanel(){
+    const total = STEPS.length;
+    if(stepIndex>=total){
+      el.stepCount.textContent='Complete';
+      el.badge.textContent='Done'; el.badge.className='badge done';
+      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base. Only N/E/S/W were ever told where to go; Ctr and all 4 corners were found by the solver.';
+      el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
+      el.stageCaption.textContent='preliminary base — collapsed (solver-discovered)';
+    } else {
+      const step = STEPS[stepIndex];
+      el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
+      el.instruction.textContent = step.instruction;
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
+      setButtonDisabled(el.foldBtn, false);
+      if(step.type==='collapse'){
+        el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
+        el.stageCaption.textContent='4 points driven, 5 points solved by the physics engine';
+      } else if(step.type==='unfold'){
+        el.badge.textContent='Unfold'; el.badge.className='badge done';
+        el.stageCaption.textContent='reversing the previous crease';
+      } else if(step.type==='flip'){
+        el.badge.textContent='Flip'; el.badge.className='badge done';
+        el.stageCaption.textContent='rigid 180° turn about the vertical crease';
+      } else {
+        el.badge.textContent='Fold'; el.badge.className='badge valley';
+        el.stageCaption.textContent = `1 point driven (${step.drive}), ${step.moving.length-1} solved by trilateration`;
+      }
+    }
+    el.stepsNav.innerHTML = STEPS.map((s,i)=>{
+      const state = i<stepIndex ? ' done' : i===stepIndex ? ' current' : '';
+      return `<button type="button" class="step-chip${state}" data-step="${i}" aria-label="Jump to step ${i+1}: ${s.label}">${s.label}</button>`;
+    }).join('');
+    updateDebugNote();
+  }
+
+  function advance(){
+    return new Promise(resolve=>{
+      if(animating || stepIndex>=STEPS.length){ resolve(); return; }
+      animating = true; setButtons(false);
+      const step = STEPS[stepIndex];
+      const isUnfold = step.type==='unfold';
+      const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
+      animateStep(foldStep, isUnfold, ()=>{
+        stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
+      });
+    });
+  }
+
+  function reset(){
+    stepIndex = 0; animating = false;
+    ALL.forEach(n => particles[n] = {...FLAT[n]});
+    applyFrame(particles);
+    updatePanel();
+  }
+
+  function jumpToStep(n){
+    if(animating) return;
+    n = Math.max(0, Math.min(n, STEPS.length));
+    playing = false; el.playBtn.textContent = '▶ Play all';
+    stepIndex = n;
+    settleUpToStep(n);
+    applyFrame(particles);
+    updatePanel();
+  }
+  el.stepsNav.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.step-chip');
+    if(!btn) return;
+    jumpToStep(parseInt(btn.dataset.step, 10));
+  });
+
+  el.foldBtn.addEventListener('click', ()=>{
+    if(isDisabled(el.foldBtn)) return;
+    if(stepIndex>=STEPS.length){ reset(); return; }
+    advance();
+  });
+  el.playBtn.addEventListener('click', async ()=>{
+    if(isDisabled(el.playBtn)) return;
+    if(playing){ playing=false; el.playBtn.textContent='▶ Play all'; return; }
+    if(stepIndex>=STEPS.length){ reset(); await new Promise(r=>setTimeout(r,200)); }
+    playing = true; el.playBtn.textContent='❚❚ Pause';
+    while(playing && stepIndex<STEPS.length){
+      await advance();
+      if(!playing) break;
+      await new Promise(r=>setTimeout(r, reducedMotion?50:450));
+    }
+    playing=false; el.playBtn.textContent='▶ Play all';
+  });
+
+  window.__particles = particles;
+  window.__COLLAPSED_REFERENCE = COLLAPSED_REFERENCE;
+  window.__group = group;
+  window.__renderNow = ()=>renderer.render(scene, camera);
+  window.__setUserRotating = (v)=>{ userRotating = v; };
+
+  updatePanel();
+})();
+</script>
+</body>
+</html>
