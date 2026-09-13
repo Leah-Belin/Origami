@@ -245,19 +245,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   for(let i=0;i<OUTER.length;i++){
     PANELS.push(['Ctr', OUTER[(i+1)%OUTER.length], OUTER[i]]);
   }
-  // Flap A gets its own independent copies of its two neighboring
-  // edge-midpoints (A_N, A_W) in place of the shared N/W, so the
-  // petal-fold step below can move flap A's corner away from the merge
-  // point without also dragging flap B's/D's still-unfolded panels along
-  // (they keep referencing plain N/W). See applyFrame below for how these
-  // default back to N/W for every step that doesn't explicitly set them.
-  PANELS.forEach(tri=>{
-    if(tri.indexOf('A')===-1) return;
-    tri.forEach((name,j)=>{
-      if(name==='N') tri[j]='A_N';
-      if(name==='W') tri[j]='A_W';
-    });
-  });
   const RED = [0.757,0.267,0.176], WHITE = [0.949,0.933,0.890];
 
   // Ring edges for the outline overlay: 8 spokes (Ctr-outer) + 8 rim segments.
@@ -326,61 +313,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     D: new THREE.Vector3(-R, 25, R),
   };
 
-  // ---- Petal fold (flap A only) ----
-  //
-  // Flap A is really 2 stacked triangular panels (Ctr-A-N and Ctr-A-W),
-  // pressed flat together since N and W both collapsed onto the same
-  // merge point. A petal fold opens those 2 panels apart into a narrow,
-  // flat "petal": corner A swings up to sit on the Ctr-merge-point axis,
-  // past it, while the flap's own copies of N and W (tracked separately
-  // as A_N/A_W above, since flap B/D keep their shared N/W fixed) spread
-  // to either side.
-  //
-  // This is a genuinely coupled mechanism — not a single rotation — but
-  // it can be built from 2 *composed* rigid rotations, each provably
-  // distance-preserving on its own, so the whole thing stays rigid at
-  // every instant, not just at the two ends (unlike lerping raw vertex
-  // positions between hand-picked endpoints, which is what caused the
-  // preliminary-base collapse to visibly tear apart earlier — see the
-  // commit history):
-  //
-  //  1. M1 — a single rotation of the *whole* flat corner+neighbor
-  //     triangle (Ctr, A, N) about the axis through Ctr and a fixed point
-  //     on the A-N edge (the same angle-bisector construction the old
-  //     precrease-corner step used). Applying ONE rigid rotation to both
-  //     A and N together automatically keeps |A-N| exactly 50 throughout
-  //     — that's just what a rigid rotation does — and at 180° it carries
-  //     A to exactly (0, -25+50√2, 0) and N to exactly the solved petal
-  //     corner, both confirmed numerically.
-  //  2. R_extra — a separate rotation of W about the axis through Ctr and
-  //     A's ORIGINAL (rest) position, applied *before* M1 carries the
-  //     result along. Both Ctr and A's rest position lie ON that axis, so
-  //     rotating W around it can never change W's rest distance to either
-  //     one (50 in both cases) — true for ANY angle. Composing that with
-  //     M1 (itself distance-preserving) means |Ctr-A_W| and |A-A_W| stay
-  //     exactly 50 for the whole animation, for whatever angle R_extra
-  //     ends up needing — which happens to be 180° too, by the same
-  //     symmetry that makes the two panels mirror images of each other.
-  const EDGE_BISECT_T = 2 - Math.SQRT2;
-  const PETAL_A_AXIS1 = new THREE.Vector3().subVectors(
-    new THREE.Vector3().lerpVectors(COLLAPSED.A, COLLAPSED.N, EDGE_BISECT_T),
-    COLLAPSED.Ctr
-  );
-  const PETAL_A_AXIS2 = new THREE.Vector3().subVectors(COLLAPSED.A, COLLAPSED.Ctr);
-  function petalFoldA(p){
-    const Ctr3 = COLLAPSED.Ctr;
-    const m1 = (point, t) => rotateAroundAxisAtOrigin(
-      new THREE.Vector3().subVectors(point, Ctr3), PETAL_A_AXIS1, t*Math.PI
-    ).add(Ctr3);
-    const A = m1(COLLAPSED.A, p);
-    const A_N = m1(COLLAPSED.N, p);
-    const wPre = rotateAroundAxisAtOrigin(
-      new THREE.Vector3().subVectors(COLLAPSED.W, Ctr3), PETAL_A_AXIS2, p*Math.PI
-    ).add(Ctr3);
-    const A_W = m1(wPre, p);
-    return { A, A_N, A_W };
-  }
-
   // ---- Steps ----
   const STEPS = [
     { type:'fold', crease:['W','E'], moving:['N','A','B'], label:'Fold top down', instruction:'Fold the top down to the bottom, creating a horizontal center crease.' },
@@ -394,7 +326,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This is the preliminary base.' },
-    { type:'petal-fold', corner:'A', label:'Petal-fold A', instruction:'Now flap A opens: its two layers spread apart while its corner swings in to the center, flattening into a narrow petal.' },
   ];
 
   // ---- Three.js scene ----
@@ -462,20 +393,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
-  // A_N/A_W fall back to matching N/W exactly, for every step that
-  // doesn't explicitly set them (i.e. every step other than flap A's own
-  // petal-fold step) — see the PANELS setup above.
-  function pointFor(frame, name){
-    return frame[name]
-      || (name==='A_N' ? frame.N : name==='A_W' ? frame.W : undefined)
-      || FLAT[name];
-  }
-
   function applyFrame(frame){
     let vi = 0;
     PANELS.forEach(tri=>{
       tri.forEach(name=>{
-        const p = pointFor(frame, name);
+        const p = frame[name] || FLAT[name];
         positions[vi*3]=p.x; positions[vi*3+1]=p.y; positions[vi*3+2]=p.z;
         vi++;
       });
@@ -484,7 +406,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     geometry.computeVertexNormals();
 
     LINE_PAIRS.forEach((name,i)=>{
-      const p = pointFor(frame, name);
+      const p = frame[name] || FLAT[name];
       linePositions[i*3]=p.x; linePositions[i*3+1]=p.y; linePositions[i*3+2]=p.z;
     });
     lineGeo.attributes.position.needsUpdate = true;
@@ -702,22 +624,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       });
       return out;
     }
-    if(step.type==='petal-fold'){
-      // Everything except flap A's own corner and its 2 independent
-      // neighbor copies (A_N, A_W — see PANELS above) stays at the
-      // settled collapsed base; those 3 points follow petalFoldA (see
-      // its definition above for why this stays rigid throughout).
-      const pc = 0.98;
-      const out = {};
-      ['Ctr', ...OUTER].forEach(name=>{
-        out[name] = new THREE.Vector3().lerpVectors(FLAT[name], COLLAPSED[name], pc);
-      });
-      const petal = petalFoldA(p);
-      out.A = petal.A;
-      out.A_N = petal.A_N;
-      out.A_W = petal.A_W;
-      return out;
-    }
     if(step.type==='flip'){
       // A rigid 180° turn of the whole sheet about the vertical (N-S)
       // crease — every point moves together, unlike a normal fold where
@@ -751,8 +657,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
 
   function animateStep(step, reverse, onDone){
-    const isSlow = step.type==='collapse' || step.type==='petal-fold';
-    const duration = reducedMotion ? 1 : (isSlow ? 1800 : 900);
+    const isCollapse = step.type==='collapse';
+    const duration = reducedMotion ? 1 : (isCollapse ? 1800 : 900);
     const start = performance.now();
 
     function frame(now){
@@ -794,21 +700,18 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base. Flap A has also been petal-folded into a narrow point.';
+      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base.';
       el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
-      el.stageCaption.textContent='preliminary base — flap A petal-folded';
+      el.stageCaption.textContent='preliminary base — collapsed';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : step.type==='petal-fold' ? 'Petal-fold →' : 'Fold →';
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
         el.stageCaption.textContent='one coordinated move, interpolated to the solved end pose';
-      } else if(step.type==='petal-fold'){
-        el.badge.textContent='Petal fold'; el.badge.className='badge collapse';
-        el.stageCaption.textContent='two composed rigid rotations, rigid at every instant';
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
