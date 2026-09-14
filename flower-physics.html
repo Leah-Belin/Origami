@@ -327,20 +327,30 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // stays fully free and settles wherever rigidity actually puts it —
       // nothing is told where to go except that those 2 pairs must meet.
       //
-      // This particular constraint set has more than one valid resting
-      // shape (the rigidity math alone doesn't pick one), and warm-starting
-      // from wherever the previous frame's partial relaxation happened to
-      // drift reliably walks into the wrong one — an asymmetric shape where
-      // panels visibly cross through each other instead of stacking. Always
-      // re-solving fresh from the collapsed reference at the current amount
-      // of closing (rather than carrying forward that drift) consistently
-      // lands on the correct, symmetric, non-self-intersecting one.
+      // This constraint set has more than one valid resting shape (rigidity
+      // alone doesn't pick one), and letting the solver freely rediscover
+      // the WHOLE configuration at each frame is unstable specifically for
+      // N/E/S/W: the collapse already left them almost coincident (barely
+      // separated near one point), so which side each sits on is only
+      // weakly encoded in the numbers, and Gauss-Seidel doesn't reliably
+      // preserve that weak signal through many iterations — it can tip
+      // into a locally twisted arrangement (E and W, or N and S, briefly
+      // swapping sides) where panels flash their wrong face before
+      // untwisting again by the end. Ctr and the 4 corners never show this
+      // (they stay well-separated the whole time), so only N/E/S/W are
+      // driven directly here — shrinking their already-known arrangement
+      // around its own center down to that single point — while Ctr and
+      // the corners are the only points actually left for relax() to
+      // discover, on a problem that was never ambiguous for them.
       const pc = Math.min(p, 0.98);
       const ref = step.ref || COLLAPSED_REFERENCE;
+      const refCentroid = vscale(vadd(vadd(ref.N, ref.E), vadd(ref.S, ref.W)), 0.25);
+      const shrink = 1 - pc;
+      ['Ctr','A','B','C','D'].forEach(n => particles[n] = {...ref[n]});
+      ['N','E','S','W'].forEach(n => particles[n] = vadd(refCentroid, vscale(vsub(ref[n], refCentroid), shrink)));
       const adRest = dist(ref.A, ref.D) * (1 - pc);
       const bcRest = dist(ref.B, ref.C) * (1 - pc);
-      ALL.forEach(n => particles[n] = {...ref[n]});
-      relax(particles, new Set(), 500, [['A','D',adRest], ['B','C',bcRest]]);
+      relax(particles, new Set(['N','E','S','W']), 200, [['A','D',adRest], ['B','C',bcRest]]);
       return;
     }
     const ref = step.ref || FLAT;
@@ -615,13 +625,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     }
   }
 
-  // 'press' re-solves fresh from a reference pose every frame (see
-  // pbdFrameForStep) instead of warm-starting, to avoid drifting into an
-  // asymmetric, self-intersecting equilibrium — but that reference has to
-  // be THIS collapse's own actual output, not the idealized
-  // COLLAPSED_REFERENCE constant, or the press step visibly snaps to
-  // whichever mirror image the constant happens to be, flipping every
-  // panel's visible color the instant the step starts.
+  // 'press' re-derives each frame from this step's real starting pose (see
+  // pbdFrameForStep), not an idealized constant — using one that doesn't
+  // match can be a mirror image (same edge lengths, opposite chirality),
+  // which would flip every panel's visible face with no folding motion to
+  // justify it.
   function captureStepRef(step, fromParticles){
     const ref = {};
     ALL.forEach(n => ref[n] = {...fromParticles[n]});
