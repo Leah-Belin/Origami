@@ -158,10 +158,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
           <button id="foldBtn" class="primary">Fold →</button>
           <button id="playBtn">▶ Play all</button>
         </div>
-        <div class="controls" id="collapseScrubWrap" hidden>
-          <p class="swatch-label">Drag to inspect the collapse frame-by-frame</p>
-          <input type="range" id="collapseScrub" min="0" max="1000" value="0" step="1" style="width:100%">
-        </div>
         <p class="swatch-label">Jump to a step</p>
         <div class="steps-nav" id="stepsNav"></div>
         <p class="swatch-label">Paper color</p>
@@ -265,9 +261,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // for the genuinely coupled, underdetermined collapse (4 driven points,
   // 5 mutually-dependent free points with no single point having 3 known
   // neighbors up front). Warm-started from the previous frame each call.
-  function relax(points, pinnedSet, iterations){
+  function relax(points, pinnedSet, iterations, extraConstraints){
+    const allConstraints = extraConstraints ? constraints.concat(extraConstraints) : constraints;
     for(let iter=0; iter<iterations; iter++){
-      for(const [ni,nj,rest] of constraints){
+      for(const [ni,nj,rest] of allConstraints){
         const pi = points[ni], pj = points[nj];
         const delta = vsub(pj,pi);
         const d = vlen(delta);
@@ -322,6 +319,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       relax(particles, new Set(driven), 40);
       return;
     }
+    if(step.type==='press'){
+      // Push the top corners down onto the bottom corners they're already
+      // above (A meets D, B meets C) — modeled as two temporary "closing"
+      // constraints whose target distance shrinks to 0, not by pinning any
+      // point in place. Every point, Ctr and the merged N/E/S/W included,
+      // stays fully free and settles wherever rigidity actually puts it —
+      // nothing is told where to go except that those 2 pairs must meet.
+      const pc = Math.min(p, 0.98);
+      const ref = COLLAPSED_REFERENCE;
+      const adRest = dist(ref.A, ref.D) * (1 - pc);
+      const bcRest = dist(ref.B, ref.C) * (1 - pc);
+      relax(particles, new Set(), 40, [['A','D',adRest], ['B','C',bcRest]]);
+      return;
+    }
     const ref = step.ref || FLAT;
     const angleRad = p*Math.PI;
     const axisDir = axisForStep(step);
@@ -358,6 +369,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
+    { type:'press', label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
   ];
 
   // ==========================================================================
@@ -572,8 +584,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     instruction: document.getElementById('instruction'),
     foldBtn: document.getElementById('foldBtn'),
     playBtn: document.getElementById('playBtn'),
-    collapseScrubWrap: document.getElementById('collapseScrubWrap'),
-    collapseScrub: document.getElementById('collapseScrub'),
     stepsNav: document.getElementById('stepsNav'),
     stageCaption: document.getElementById('stageCaption'),
     debugNote: document.getElementById('debugNote'),
@@ -595,8 +605,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   }
 
   function animateStep(step, reverse, onDone){
-    const isSlow = step.type==='collapse';
-    const duration = reducedMotion ? 1 : (isSlow ? 6000 : 900);
+    const isSlow = step.type==='collapse' || step.type==='press';
+    const duration = reducedMotion ? 1 : (isSlow ? 1800 : 900);
     const start = performance.now();
     function frame(now){
       let t = Math.min(1, (now-start)/duration);
@@ -621,28 +631,28 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function setButtonDisabled(btn, off){ btn.setAttribute('aria-disabled', off ? 'true' : 'false'); }
   function isDisabled(btn){ return btn.getAttribute('aria-disabled')==='true'; }
-  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); el.collapseScrub.disabled = !on; }
+  function setButtons(on){ setButtonDisabled(el.foldBtn, !on); setButtonDisabled(el.playBtn, !on); }
 
   function updatePanel(){
     const total = STEPS.length;
-    el.collapseScrubWrap.hidden = true;
     if(stepIndex>=total){
       el.stepCount.textContent='Complete';
       el.badge.textContent='Done'; el.badge.className='badge done';
-      el.instruction.textContent='The 4 edge midpoints meet at one point above center, with center dipped down as the opposite tip, and the 4 corners spread apart forming the rim — the preliminary base. Only N/E/S/W were ever told where to go; Ctr and all 4 corners were found by the solver.';
+      el.instruction.textContent='The top-right corner was pulled to meet the bottom-right corner, and the top-left corner to meet the bottom-left corner — the whole model presses flat. Nothing else was told where to go; every point\'s final position was found by the solver.';
       el.foldBtn.textContent='Replay'; setButtonDisabled(el.foldBtn, false);
-      el.stageCaption.textContent='preliminary base — collapsed (solver-discovered)';
+      el.stageCaption.textContent='preliminary base — pressed flat (solver-discovered)';
     } else {
       const step = STEPS[stepIndex];
       el.stepCount.textContent = `Step ${stepIndex+1} of ${total}`;
       el.instruction.textContent = step.instruction;
-      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='flip' ? 'Flip →' : 'Fold →';
+      el.foldBtn.textContent = step.type==='unfold' ? 'Unfold →' : step.type==='collapse' ? 'Collapse →' : step.type==='press' ? 'Press →' : step.type==='flip' ? 'Flip →' : 'Fold →';
       setButtonDisabled(el.foldBtn, false);
       if(step.type==='collapse'){
         el.badge.textContent='3D collapse'; el.badge.className='badge collapse';
         el.stageCaption.textContent='4 points driven, 5 points solved by the physics engine';
-        el.collapseScrubWrap.hidden = false;
-        el.collapseScrub.value = 0;
+      } else if(step.type==='press'){
+        el.badge.textContent='Press flat'; el.badge.className='badge collapse';
+        el.stageCaption.textContent='2 corner-pairs pulled together, everything else solved by the physics engine';
       } else if(step.type==='unfold'){
         el.badge.textContent='Unfold'; el.badge.className='badge done';
         el.stageCaption.textContent='reversing the previous crease';
@@ -712,16 +722,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       await new Promise(r=>setTimeout(r, reducedMotion?50:450));
     }
     playing=false; el.playBtn.textContent='▶ Play all';
-  });
-
-  el.collapseScrub.addEventListener('input', ()=>{
-    if(animating) return;
-    const step = STEPS[stepIndex];
-    if(!step || step.type!=='collapse') return;
-    const p = parseInt(el.collapseScrub.value, 10) / 1000;
-    pbdFrameForStep(step, p, particles);
-    applyFrame(particles, null);
-    updateDebugNote();
   });
 
   window.__particles = particles;
