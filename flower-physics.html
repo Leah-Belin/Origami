@@ -326,11 +326,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // point in place. Every point, Ctr and the merged N/E/S/W included,
       // stays fully free and settles wherever rigidity actually puts it —
       // nothing is told where to go except that those 2 pairs must meet.
+      //
+      // This particular constraint set has more than one valid resting
+      // shape (the rigidity math alone doesn't pick one), and warm-starting
+      // from wherever the previous frame's partial relaxation happened to
+      // drift reliably walks into the wrong one — an asymmetric shape where
+      // panels visibly cross through each other instead of stacking. Always
+      // re-solving fresh from the collapsed reference at the current amount
+      // of closing (rather than carrying forward that drift) consistently
+      // lands on the correct, symmetric, non-self-intersecting one.
       const pc = Math.min(p, 0.98);
       const ref = COLLAPSED_REFERENCE;
       const adRest = dist(ref.A, ref.D) * (1 - pc);
       const bcRest = dist(ref.B, ref.C) * (1 - pc);
-      relax(particles, new Set(), 40, [['A','D',adRest], ['B','C',bcRest]]);
+      ALL.forEach(n => particles[n] = {...ref[n]});
+      relax(particles, new Set(), 500, [['A','D',adRest], ['B','C',bcRest]]);
       return;
     }
     const ref = step.ref || FLAT;
