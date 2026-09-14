@@ -336,7 +336,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       // of closing (rather than carrying forward that drift) consistently
       // lands on the correct, symmetric, non-self-intersecting one.
       const pc = Math.min(p, 0.98);
-      const ref = COLLAPSED_REFERENCE;
+      const ref = step.ref || COLLAPSED_REFERENCE;
       const adRest = dist(ref.A, ref.D) * (1 - pc);
       const bcRest = dist(ref.B, ref.C) * (1 - pc);
       ALL.forEach(n => particles[n] = {...ref[n]});
@@ -610,8 +610,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     for(let i=0;i<n;i++){
       const step = STEPS[i];
       if(step.type==='unfold') continue; // net no-op on the settled state
+      if(step.type==='press') captureStepRef(step, particles);
       for(let f=1; f<=24; f++) pbdFrameForStep(step, f/24, particles);
     }
+  }
+
+  // 'press' re-solves fresh from a reference pose every frame (see
+  // pbdFrameForStep) instead of warm-starting, to avoid drifting into an
+  // asymmetric, self-intersecting equilibrium — but that reference has to
+  // be THIS collapse's own actual output, not the idealized
+  // COLLAPSED_REFERENCE constant, or the press step visibly snaps to
+  // whichever mirror image the constant happens to be, flipping every
+  // panel's visible color the instant the step starts.
+  function captureStepRef(step, fromParticles){
+    const ref = {};
+    ALL.forEach(n => ref[n] = {...fromParticles[n]});
+    step.ref = ref;
   }
 
   function animateStep(step, reverse, onDone){
@@ -688,6 +702,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       const isUnfold = step.type==='unfold';
       const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
+      if(foldStep.type==='press' && !isUnfold) captureStepRef(foldStep, particles);
       animateStep(foldStep, isUnfold, ()=>{
         stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
       });
