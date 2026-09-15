@@ -291,8 +291,22 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   function axisForStep(step){
     if(step._axis) return step._axis;
     const ref = step.ref || FLAT;
-    const a = ref[step.crease[0]], b = ref[step.crease[1]];
-    const axisDir = vsub(b, a);
+    let axisDir;
+    if(step.bisectAxis){
+      // The crease isn't the line between 2 existing points — it's a NEW
+      // line through Ctr bisecting the angle between two of Ctr's rays
+      // (e.g. folding an outer edge in to meet the center edge). Folding
+      // 180° about that bisector is exactly what swaps one ray onto the
+      // other, landing the driven point on the target ray at the same
+      // distance from Ctr it started at.
+      const [p1, p2] = step.bisectAxis;
+      const v1 = vnorm(vsub(ref[p1], ref.Ctr));
+      const v2 = vnorm(vsub(ref[p2], ref.Ctr));
+      axisDir = vadd(v1, v2);
+    } else {
+      const a = ref[step.crease[0]], b = ref[step.crease[1]];
+      axisDir = vsub(b, a);
+    }
     const probe = rotateAroundAxisAt(ref[step.moving[0]], ref.Ctr, axisDir, 0.05);
     const out = probe.y < ref[step.moving[0]].y ? vscale(axisDir, -1) : axisDir;
     step._axis = out;
@@ -399,7 +413,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
     { type:'press', needsRef:true, label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
-    { type:'fold', crease:['Ctr','N'], moving:['A','D'], drive:'A', needsRef:true, label:'Precrease left flap', instruction:'Fold the left tip over onto the right tip — the crease bisects the angle at the shared corner, running down to the center of the opposite edge. Just a crease: only the left tip is told where to go, and we unfold right after.' },
+    { type:'fold', bisectAxis:['A','N'], moving:['A','D'], drive:'A', needsRef:true, label:'Precrease left flap', instruction:'Fold the left tip down so its outer edge meets the central edge — the crease is the new bisector line between them. Just a crease: only the left tip is told where to go, and we unfold right after.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
   ];
 
