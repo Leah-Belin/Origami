@@ -279,12 +279,21 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     }
   }
 
+  // Rotates the absolute point v about the line through `pivot` in
+  // direction `axisDir` — a no-op shift for every existing step (their
+  // crease always passes through the world origin, i.e. pivot=(0,0,0)),
+  // but needed once a step's own Ctr isn't at the origin (a fold starting
+  // from an already-collapsed/pressed pose rather than FLAT).
+  function rotateAroundAxisAt(v, pivot, axisDir, angleRad){
+    return vadd(pivot, rotateAroundAxisAtOrigin(vsub(v, pivot), axisDir, angleRad));
+  }
+
   function axisForStep(step){
     if(step._axis) return step._axis;
     const ref = step.ref || FLAT;
     const a = ref[step.crease[0]], b = ref[step.crease[1]];
     const axisDir = vsub(b, a);
-    const probe = rotateAroundAxisAtOrigin(ref[step.moving[0]], axisDir, 0.05);
+    const probe = rotateAroundAxisAt(ref[step.moving[0]], ref.Ctr, axisDir, 0.05);
     const out = probe.y < ref[step.moving[0]].y ? vscale(axisDir, -1) : axisDir;
     step._axis = out;
     return out;
@@ -358,7 +367,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const axisDir = axisForStep(step);
     particles.Ctr = {...ref.Ctr};
     OUTER.forEach(n=>{ if(!step.moving.includes(n)) particles[n] = {...ref[n]}; });
-    particles[step.drive] = rotateAroundAxisAtOrigin(ref[step.drive], axisDir, angleRad);
+    particles[step.drive] = rotateAroundAxisAt(ref[step.drive], ref.Ctr, axisDir, angleRad);
     const free = step.moving.filter(n=>n!==step.drive);
     free.forEach(name=>{
       const [nb1, nb2] = neighborsOf(name);
@@ -389,7 +398,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 creases exist now — this is the hard part next.' },
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
-    { type:'press', label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
+    { type:'press', needsRef:true, label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
+    { type:'fold', crease:['Ctr','N'], moving:['A','D'], drive:'A', needsRef:true, label:'Precrease left flap', instruction:'Fold the left tip over onto the right tip — the crease bisects the angle at the shared corner, running down to the center of the opposite edge. Just a crease: only the left tip is told where to go, and we unfold right after.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
   ];
 
   // ==========================================================================
@@ -620,7 +631,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     for(let i=0;i<n;i++){
       const step = STEPS[i];
       if(step.type==='unfold') continue; // net no-op on the settled state
-      if(step.type==='press') captureStepRef(step, particles);
+      if(step.needsRef) captureStepRef(step, particles);
       for(let f=1; f<=24; f++) pbdFrameForStep(step, f/24, particles);
     }
   }
@@ -634,6 +645,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     const ref = {};
     ALL.forEach(n => ref[n] = {...fromParticles[n]});
     step.ref = ref;
+    delete step._axis;
   }
 
   function animateStep(step, reverse, onDone){
@@ -710,7 +722,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const step = STEPS[stepIndex];
       const isUnfold = step.type==='unfold';
       const foldStep = isUnfold ? STEPS[stepIndex-1] : step;
-      if(foldStep.type==='press' && !isUnfold) captureStepRef(foldStep, particles);
+      if(foldStep.needsRef && !isUnfold) captureStepRef(foldStep, particles);
       animateStep(foldStep, isUnfold, ()=>{
         stepIndex++; animating=false; setButtons(true); updatePanel(); resolve();
       });
