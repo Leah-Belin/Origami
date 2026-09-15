@@ -413,8 +413,14 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
     { type:'press', needsRef:true, label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
-    { type:'fold', bisectAxis:['A','N'], moving:['A','D'], drive:'A', needsRef:true, label:'Precrease left flap', instruction:'Fold the left tip down so its outer edge meets the central edge — the crease is the new bisector line between them. Just a crease: only the left tip is told where to go, and we unfold right after.' },
+    { type:'fold', bisectAxis:['A','N'], moving:['A'], drive:'A', needsRef:true, label:'Precrease flap A', instruction:'Fold corner A down so its own outer edge meets the central edge — a plain crease, unfolded right after. N/E/S/W are already coincident at the shared corner, so this flap (Ctr, the shared corner, and A) is self-contained; the other 3 corners aren\'t touched.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'fold', bisectAxis:['B','N'], moving:['B'], drive:'B', needsRef:true, label:'Precrease flap B', instruction:'Same crease, corner B\'s flap this time.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'fold', bisectAxis:['C','N'], moving:['C'], drive:'C', needsRef:true, label:'Precrease flap C', instruction:'Same crease, corner C\'s flap this time.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold.' },
+    { type:'fold', bisectAxis:['D','N'], moving:['D'], drive:'D', needsRef:true, label:'Precrease flap D', instruction:'Same crease, corner D\'s flap — the last of the 4.' },
+    { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 flaps are precreased now.' },
   ];
 
   // ==========================================================================
