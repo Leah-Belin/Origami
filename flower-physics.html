@@ -292,7 +292,20 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(step._axis) return step._axis;
     const ref = step.ref || FLAT;
     let axisDir;
-    {
+    if(step.bisectAxis){
+      // The hinge is a NEW crease through Ctr, bisecting the angle between
+      // the driven corner and the shared/merged point — folding 180° about
+      // it reflects the corner exactly onto the ray toward that merged
+      // point, at the same distance from Ctr it started at ("outer edge
+      // meets the central edge"). This only fixes dist(Ctr, driven); the
+      // driven point's real paper-edge neighbors are left free (in
+      // `moving`) so the solver finds where THEY land to keep those edges
+      // rigid, rather than a formula assuming they stay put.
+      const [p1, p2] = step.bisectAxis;
+      const v1 = vnorm(vsub(ref[p1], ref.Ctr));
+      const v2 = vnorm(vsub(ref[p2], ref.Ctr));
+      axisDir = vadd(v1, v2);
+    } else {
       const a = ref[step.crease[0]], b = ref[step.crease[1]];
       axisDir = vsub(b, a);
     }
@@ -402,13 +415,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
     { type:'press', needsRef:true, label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
-    { type:'fold', crease:['Ctr','N'], moving:['A'], drive:'A', needsRef:true, label:'Precrease flap A', instruction:'Fold corner A down along the existing center crease line. N/E/S/W are already coincident at the shared corner, so this flap (Ctr, the shared corner, and A) is self-contained; the other 3 corners aren\'t touched.' },
+    { type:'fold', bisectAxis:['A','N'], moving:['A','N','W'], drive:'A', needsRef:true, label:'Precrease flap A', instruction:'Fold corner A up past center so its own outer edge meets the central crease — a plain crease, unfolded right after. N and W (A\'s real paper neighbors) aren\'t pinned in place; the solver moves them to wherever keeps those edges rigid as A folds. The other 3 corners aren\'t touched.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', crease:['Ctr','N'], moving:['B'], drive:'B', needsRef:true, label:'Precrease flap B', instruction:'Same crease, corner B\'s flap this time.' },
+    { type:'fold', bisectAxis:['B','N'], moving:['B','N','E'], drive:'B', needsRef:true, label:'Precrease flap B', instruction:'Same crease, corner B\'s flap this time.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', crease:['Ctr','N'], moving:['C'], drive:'C', needsRef:true, label:'Precrease flap C', instruction:'Same crease, corner C\'s flap this time.' },
+    { type:'fold', bisectAxis:['C','E'], moving:['C','E','S'], drive:'C', needsRef:true, label:'Precrease flap C', instruction:'Same crease, corner C\'s flap this time.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', crease:['Ctr','N'], moving:['D'], drive:'D', needsRef:true, label:'Precrease flap D', instruction:'Same crease, corner D\'s flap — the last of the 4.' },
+    { type:'fold', bisectAxis:['D','S'], moving:['D','S','W'], drive:'D', needsRef:true, label:'Precrease flap D', instruction:'Same crease, corner D\'s flap — the last of the 4.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 flaps are precreased now.' },
   ];
 
@@ -470,7 +483,27 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // flap reliably draws on top, the way it would in real, non-zero-thickness
   // paper. It never touches `particles`, so the solver keeps working with
   // exact positions.
-  function applyFrame(frame, lift){
+  // Real paper only shows a crease once you've actually folded it there —
+  // a blank sheet has none. `crease`-driven fold steps (the flat-sheet
+  // creases, before the collapse) each name the 2 OUTER points their fold
+  // axis runs through; once that fold has happened at least once (folded,
+  // even if since unfolded — a crease doesn't un-happen), the Ctr–point
+  // spoke to each of them is drawn from then on. Steps without a plain
+  // `crease` (bisectAxis folds, collapse, press, flip) don't add to this —
+  // they reuse creases already made, rather than scoring new ones with a
+  // simple 2-point line. Ring/boundary edges are the sheet's own physical
+  // edge, not a crease, so those always draw.
+  function madeCreasePoints(uptoIndex, activeStep){
+    const set = new Set();
+    for(let i=0;i<uptoIndex;i++){
+      const s = STEPS[i];
+      if(s.type==='fold' && s.crease){ set.add(s.crease[0]); set.add(s.crease[1]); }
+    }
+    if(activeStep && activeStep.crease){ set.add(activeStep.crease[0]); set.add(activeStep.crease[1]); }
+    return set;
+  }
+
+  function applyFrame(frame, lift, activeStep){
     const liftPts = lift && lift.points, liftAmt = lift ? lift.amount : 0;
     function liftedY(name, p){ return (liftPts && liftPts.has(name)) ? p.y + liftAmt : p.y; }
     let vi = 0;
@@ -483,9 +516,12 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     });
     geometry.attributes.position.needsUpdate = true;
     geometry.computeVertexNormals();
+    const creased = madeCreasePoints(stepIndex, activeStep);
     LINE_PAIRS.forEach((name,i)=>{
-      const p = frame[name] || FLAT[name];
-      linePositions[i*3]=p.x; linePositions[i*3+1]=liftedY(name,p); linePositions[i*3+2]=p.z;
+      const isSpoke = i < OUTER.length*2; // first OUTER.length segments (2 vertices each) are the Ctr-spokes; the rest are ring/boundary edges
+      const drawName = (isSpoke && !creased.has(name)) ? 'Ctr' : name;
+      const p = frame[drawName] || FLAT[drawName];
+      linePositions[i*3]=p.x; linePositions[i*3+1]=liftedY(drawName,p); linePositions[i*3+2]=p.z;
     });
     lineGeo.attributes.position.needsUpdate = true;
   }
@@ -499,6 +535,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     return null;
   }
 
+  let stepIndex = 0, animating = false, playing = false;
   applyFrame(FLAT);
 
   function resize(){
@@ -615,7 +652,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // positions across frames AND across steps — that's what "warm-starting"
   // means here. It's reset to FLAT only on an explicit Replay.
   // ==========================================================================
-  let stepIndex = 0, animating = false, playing = false;
   let particles = {}; ALL.forEach(n => particles[n] = {...FLAT[n]});
 
   const el = {
@@ -666,7 +702,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const te = easeInOut(t);
       const p = reverse ? (1-te) : te;
       pbdFrameForStep(step, p, particles);
-      applyFrame(particles, step.type==='fold' ? { points: new Set(step.moving), amount: p*0.3 } : null);
+      applyFrame(particles, step.type==='fold' ? { points: new Set(step.moving), amount: p*0.3 } : null, step);
       updateDebugNote();
       if(t<1){ requestAnimationFrame(frame); return; }
       onDone();
