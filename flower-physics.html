@@ -163,6 +163,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         <p class="swatch-label">Paper color</p>
         <div class="swatches" id="swatches"></div>
         <p class="debug-note" id="debugNote"></p>
+
+        <p class="swatch-label">Drag-fold sandbox</p>
+        <p class="progress-note" style="margin:0 0 .8rem;">Navigate to a step with the buttons above, then drag any dot to explore a fold by hand — the solver keeps every real paper edge exactly rigid live. Everything not dragged stays pinned unless you mark it free below.</p>
+        <div class="controls">
+          <button id="dragModeBtn">Enter drag mode</button>
+          <button id="dragResetBtn" style="display:none">Reset positions</button>
+          <button id="copyPosBtn" style="display:none">Copy positions</button>
+        </div>
+        <div id="freePointsPanel" class="controls" style="display:none"></div>
+        <pre id="dragReadout" class="debug-note" style="display:none; white-space:pre-wrap;"></pre>
       </div>
     </div>
   </main>
@@ -508,6 +518,28 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
+  // ---- Drag-fold sandbox: a hand-draggable marker per named point, so a
+  // fold can be discovered by dragging instead of writing a rotation
+  // formula for it. Hidden (and non-interactive) outside drag mode.
+  const markerGroup = new THREE.Group();
+  markerGroup.visible = false;
+  group.add(markerGroup);
+  const markers = {};
+  ALL.forEach(name=>{
+    const markerMat = new THREE.MeshBasicMaterial({ color: name==='Ctr' ? 0x5B6169 : 0x2B6E77, depthTest:false });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.4, 16, 16), markerMat);
+    mesh.renderOrder = 999;
+    mesh.userData.name = name;
+    markerGroup.add(mesh);
+    markers[name] = mesh;
+  });
+  function updateMarkers(){
+    ALL.forEach(name=>{
+      const p = particles[name] || FLAT[name];
+      markers[name].position.set(p.x, p.y, p.z);
+    });
+  }
+
   // `lift` is display-only: a folded flap can land exactly coplanar with
   // the static half underneath it (the physics is correct — the paper
   // really is two flat layers in the same place), and without help the
@@ -612,12 +644,76 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const dragHintEl = document.getElementById('dragHint');
   function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
 
+  // ---- Drag-fold sandbox interaction ----
+  let dragModeOn = false, draggingName = null, freeSet = new Set();
+  const raycaster = new THREE.Raycaster();
+  const _tmpV2 = new THREE.Vector2();
+  const _tmpV3 = new THREE.Vector3();
+  const _tmpPlane = new THREE.Plane();
+  const _camDir = new THREE.Vector3();
+  function ndcFromEvent(e){
+    const rect = renderer.domElement.getBoundingClientRect();
+    _tmpV2.set(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
+    return _tmpV2;
+  }
+  function pickMarker(e){
+    // Screen-space nearest-marker pick, not a 3D raycast: at some viewing
+    // angles two markers project very close together (or one is briefly
+    // behind another), and a depth-based ray hit would silently grab
+    // whichever is a hair closer to the camera — not whichever dot the
+    // user is actually looking at on screen.
+    const rect = renderer.domElement.getBoundingClientRect();
+    let best = null, bestDist = 22; // px
+    ALL.forEach(name=>{
+      if(name==='Ctr') return;
+      markers[name].getWorldPosition(_tmpV3);
+      const proj = _tmpV3.clone().project(camera);
+      const sx = (proj.x*0.5+0.5)*rect.width + rect.left;
+      const sy = (1-(proj.y*0.5+0.5))*rect.height + rect.top;
+      const d = Math.hypot(sx-e.clientX, sy-e.clientY);
+      if(d < bestDist){ bestDist = d; best = name; }
+    });
+    return best;
+  }
+  function dragPoint(e){
+    raycaster.setFromCamera(ndcFromEvent(e), camera);
+    markers[draggingName].getWorldPosition(_tmpV3);
+    camera.getWorldDirection(_camDir);
+    _tmpPlane.setFromNormalAndCoplanarPoint(_camDir, _tmpV3);
+    const hit = new THREE.Vector3();
+    if(!raycaster.ray.intersectPlane(_tmpPlane, hit)) return;
+    group.worldToLocal(hit);
+    // The dragged point's distance to Ctr is an already-made crease/
+    // diagonal from earlier in the sequence, never re-creased later — so
+    // hold it exactly, and let the mouse steer direction only. Without
+    // this, a free-space drag almost never lands on a distance the rest
+    // of the sheet could actually reach, and every drag reads as "stretch"
+    // no matter which points are marked free.
+    const wantDist = restLen[draggingName+'|Ctr'];
+    const dir = vnorm(vsub(hit, particles.Ctr));
+    particles[draggingName] = vadd(particles.Ctr, vscale(dir, wantDist));
+    const pinned = new Set(ALL.filter(n => !freeSet.has(n)));
+    relax(particles, pinned, 150);
+    applyFrame(particles);
+    updateMarkers();
+    updateDragReadout();
+  }
+
   stageEl.addEventListener('pointerdown', (e)=>{
+    if(dragModeOn){
+      const hit = pickMarker(e);
+      if(hit && hit!=='Ctr'){
+        draggingName = hit;
+        stageEl.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
     pointerActive = true; dragging = false;
     downX = lastX = e.clientX; downY = lastY = e.clientY;
     stageEl.setPointerCapture(e.pointerId);
   });
   stageEl.addEventListener('pointermove', (e)=>{
+    if(draggingName){ dragPoint(e); return; }
     if(!pointerActive) return;
     if(!dragging){
       const totalDx = e.clientX - downX, totalDy = e.clientY - downY;
@@ -631,7 +727,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     lastX = e.clientX; lastY = e.clientY;
     orbit(dx * 0.008, dy * 0.008);
   });
-  function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
+  function endDrag(){ pointerActive = false; dragging = false; draggingName = null; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
   stageEl.addEventListener('pointercancel', endDrag);
   stageEl.addEventListener('pointerleave', endDrag);
@@ -696,6 +792,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     stepsNav: document.getElementById('stepsNav'),
     stageCaption: document.getElementById('stageCaption'),
     debugNote: document.getElementById('debugNote'),
+    dragModeBtn: document.getElementById('dragModeBtn'),
+    dragResetBtn: document.getElementById('dragResetBtn'),
+    copyPosBtn: document.getElementById('copyPosBtn'),
+    freePointsPanel: document.getElementById('freePointsPanel'),
+    dragReadout: document.getElementById('dragReadout'),
   };
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
@@ -848,7 +949,64 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     playing=false; el.playBtn.textContent='▶ Play all';
   });
 
+  // ---- Drag-fold sandbox controls ----
+  function updateDragReadout(){
+    let maxErr = 0, worst = '';
+    constraints.forEach(([a,b,rest])=>{
+      const err = Math.abs(dist(particles[a],particles[b]) - rest);
+      if(err > maxErr){ maxErr = err; worst = a+'-'+b; }
+    });
+    const lines = ALL.map(n=>{
+      const p = particles[n];
+      return `${n.padEnd(4)} (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`;
+    });
+    el.dragReadout.textContent = `Max real-edge drift: ${maxErr.toExponential(2)} (worst: ${worst===''?'—':worst})\n` + lines.join('\n');
+  }
+  el.freePointsPanel.innerHTML = OUTER.map(n=>
+    `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;"><input type="checkbox" data-pt="${n}"> ${n} free</label>`
+  ).join('');
+  el.freePointsPanel.querySelectorAll('input').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) freeSet.add(cb.dataset.pt); else freeSet.delete(cb.dataset.pt);
+    });
+  });
+  el.dragModeBtn.addEventListener('click', ()=>{
+    dragModeOn = !dragModeOn;
+    markerGroup.visible = dragModeOn;
+    el.dragModeBtn.textContent = dragModeOn ? 'Exit drag mode' : 'Enter drag mode';
+    el.dragResetBtn.style.display = dragModeOn ? '' : 'none';
+    el.copyPosBtn.style.display = dragModeOn ? '' : 'none';
+    el.freePointsPanel.style.display = dragModeOn ? '' : 'none';
+    el.dragReadout.style.display = dragModeOn ? '' : 'none';
+    setButtons(!dragModeOn);
+    if(dragModeOn){
+      userRotating = true; hideDragHint();
+      updateMarkers();
+      updateDragReadout();
+    }
+  });
+  el.dragResetBtn.addEventListener('click', ()=>{
+    settleUpToStep(stepIndex);
+    applyFrame(particles, currentLift());
+    updateMarkers();
+    updateDragReadout();
+  });
+  el.copyPosBtn.addEventListener('click', async ()=>{
+    const data = {};
+    ALL.forEach(n=>{ const p=particles[n]; data[n] = { x:+p.x.toFixed(4), y:+p.y.toFixed(4), z:+p.z.toFixed(4) }; });
+    const text = JSON.stringify(data, null, 2);
+    try{
+      await navigator.clipboard.writeText(text);
+      el.copyPosBtn.textContent = 'Copied!';
+      setTimeout(()=>{ el.copyPosBtn.textContent = 'Copy positions'; }, 1200);
+    }catch(e){
+      el.dragReadout.textContent = text;
+    }
+  });
+
   window.__particles = particles;
+  window.__camera = camera;
+  window.__markers = markers;
   window.__COLLAPSED_REFERENCE = COLLAPSED_REFERENCE;
   window.__group = group;
   window.__renderNow = ()=>renderer.render(scene, camera);
