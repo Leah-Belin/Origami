@@ -540,6 +540,33 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     });
   }
 
+  // Text labels for the sandbox markers — plain positioned DOM elements
+  // (not sprites) so they stay crisp and legible at any zoom, kept in sync
+  // with the markers' screen position every frame while drag mode is on.
+  const labelEls = {};
+  ALL.forEach(name=>{
+    const elLabel = document.createElement('div');
+    elLabel.textContent = name;
+    elLabel.style.cssText = 'position:absolute; transform:translate(-50%,-160%); background:#20242A; color:#fff; font:700 11px "IBM Plex Mono",monospace; padding:1px 5px; border-radius:4px; pointer-events:none; z-index:20; display:none; white-space:nowrap;';
+    stageEl.appendChild(elLabel);
+    labelEls[name] = elLabel;
+  });
+  function updateLabels(){
+    const rect = renderer.domElement.getBoundingClientRect();
+    const stageRect = stageEl.getBoundingClientRect();
+    ALL.forEach(name=>{
+      markers[name].getWorldPosition(_tmpV3);
+      const proj = _tmpV3.clone().project(camera);
+      const x = (proj.x*0.5+0.5)*rect.width + (rect.left - stageRect.left);
+      const y = (1-(proj.y*0.5+0.5))*rect.height + (rect.top - stageRect.top);
+      labelEls[name].style.left = x+'px';
+      labelEls[name].style.top = y+'px';
+    });
+  }
+  function setLabelsVisible(v){
+    ALL.forEach(name=> labelEls[name].style.display = v ? '' : 'none');
+  }
+
   // `lift` is display-only: a folded flap can land exactly coplanar with
   // the static half underneath it (the physics is correct — the paper
   // really is two flat layers in the same place), and without help the
@@ -646,16 +673,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   // ---- Drag-fold sandbox interaction ----
   let dragModeOn = false, draggingName = null, freeSet = new Set();
-  const raycaster = new THREE.Raycaster();
-  const _tmpV2 = new THREE.Vector2();
+  let lastDragX = 0, lastDragY = 0;
   const _tmpV3 = new THREE.Vector3();
-  const _tmpPlane = new THREE.Plane();
-  const _camDir = new THREE.Vector3();
-  function ndcFromEvent(e){
-    const rect = renderer.domElement.getBoundingClientRect();
-    _tmpV2.set(((e.clientX-rect.left)/rect.width)*2-1, -((e.clientY-rect.top)/rect.height)*2+1);
-    return _tmpV2;
-  }
   function pickMarker(e){
     // Screen-space nearest-marker pick, not a 3D raycast: at some viewing
     // angles two markers project very close together (or one is briefly
@@ -676,21 +695,32 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     return best;
   }
   function dragPoint(e){
-    raycaster.setFromCamera(ndcFromEvent(e), camera);
-    markers[draggingName].getWorldPosition(_tmpV3);
-    camera.getWorldDirection(_camDir);
-    _tmpPlane.setFromNormalAndCoplanarPoint(_camDir, _tmpV3);
-    const hit = new THREE.Vector3();
-    if(!raycaster.ray.intersectPlane(_tmpPlane, hit)) return;
-    group.worldToLocal(hit);
+    const dx = e.clientX - lastDragX, dy = e.clientY - lastDragY;
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    if(!dx && !dy) return;
+    // Trackball-style, not a screen-plane intersection: rotate the point
+    // around Ctr, using camera-relative axes, by an angle proportional to
+    // the mouse move. A fixed drag PLANE can only reach a small patch of
+    // the point's actual range of motion (the sphere around Ctr at its
+    // real, fixed distance) before the ray stops crossing it usefully —
+    // this instead covers that whole sphere with ordinary mouse movement,
+    // the same way you'd spin a trackball.
+    const camRight = new THREE.Vector3(), camUp = new THREE.Vector3();
+    camera.matrixWorld.extractBasis(camRight, camUp, new THREE.Vector3());
+    const ctrWorld = new THREE.Vector3(); markers.Ctr.getWorldPosition(ctrWorld);
+    const ptWorld = new THREE.Vector3(); markers[draggingName].getWorldPosition(ptWorld);
+    const rel = ptWorld.sub(ctrWorld);
+    const sens = 0.012;
+    rel.applyAxisAngle(camUp, -dx*sens);
+    rel.applyAxisAngle(camRight, -dy*sens);
+    const newWorld = ctrWorld.add(rel);
+    group.worldToLocal(newWorld);
     // The dragged point's distance to Ctr is an already-made crease/
-    // diagonal from earlier in the sequence, never re-creased later — so
-    // hold it exactly, and let the mouse steer direction only. Without
-    // this, a free-space drag almost never lands on a distance the rest
-    // of the sheet could actually reach, and every drag reads as "stretch"
-    // no matter which points are marked free.
+    // diagonal from earlier in the sequence, never re-creased later —
+    // rotating `rel` already preserves it exactly, but re-snap to it
+    // explicitly so repeated small floating-point drift can't accumulate.
     const wantDist = restLen[draggingName+'|Ctr'];
-    const dir = vnorm(vsub(hit, particles.Ctr));
+    const dir = vnorm(vsub(newWorld, particles.Ctr));
     particles[draggingName] = vadd(particles.Ctr, vscale(dir, wantDist));
     const pinned = new Set(ALL.filter(n => !freeSet.has(n)));
     relax(particles, pinned, 150);
@@ -704,6 +734,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       const hit = pickMarker(e);
       if(hit && hit!=='Ctr'){
         draggingName = hit;
+        lastDragX = e.clientX; lastDragY = e.clientY;
         stageEl.setPointerCapture(e.pointerId);
         return;
       }
@@ -747,6 +778,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function renderLoop(){
     renderer.render(scene, camera);
+    if(dragModeOn) updateLabels();
     requestAnimationFrame(renderLoop);
   }
   renderLoop();
@@ -962,9 +994,11 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     });
     el.dragReadout.textContent = `Max real-edge drift: ${maxErr.toExponential(2)} (worst: ${worst===''?'—':worst})\n` + lines.join('\n');
   }
-  el.freePointsPanel.innerHTML = OUTER.map(n=>
-    `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;"><input type="checkbox" data-pt="${n}"> ${n} free</label>`
-  ).join('');
+  el.freePointsPanel.innerHTML =
+    `<span style="font-size:.78rem;color:var(--ink-muted);width:100%;">By default every other point stays pinned exactly in place while you drag. Check a point here to let the solver move it too, so it can settle wherever keeps its real paper edges rigid:</span>` +
+    OUTER.map(n=>
+      `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;" title="Let ${n} move too while dragging, instead of staying pinned"><input type="checkbox" data-pt="${n}"> let ${n} move</label>`
+    ).join('');
   el.freePointsPanel.querySelectorAll('input').forEach(cb=>{
     cb.addEventListener('change', ()=>{
       if(cb.checked) freeSet.add(cb.dataset.pt); else freeSet.delete(cb.dataset.pt);
@@ -973,6 +1007,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   el.dragModeBtn.addEventListener('click', ()=>{
     dragModeOn = !dragModeOn;
     markerGroup.visible = dragModeOn;
+    setLabelsVisible(dragModeOn);
     el.dragModeBtn.textContent = dragModeOn ? 'Exit drag mode' : 'Enter drag mode';
     el.dragResetBtn.style.display = dragModeOn ? '' : 'none';
     el.copyPosBtn.style.display = dragModeOn ? '' : 'none';
@@ -982,6 +1017,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     if(dragModeOn){
       userRotating = true; hideDragHint();
       updateMarkers();
+      updateLabels();
       updateDragReadout();
     }
   });
