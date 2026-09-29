@@ -163,18 +163,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         <p class="swatch-label">Paper color</p>
         <div class="swatches" id="swatches"></div>
         <p class="debug-note" id="debugNote"></p>
-
-        <p class="swatch-label">Fold sandbox</p>
-        <p class="progress-note" style="margin:0 0 .8rem;">Navigate to a step above, then define a fold directly: pick the 2 points the crease runs through, pick which points fold along with it, then use the slider to fold — a true rigid rotation, so nothing inside the folding set can ever stretch relative to anything else in it. Any real edge from the folding set to a point you left out shows up as drift below.</p>
-        <div class="controls">
-          <button id="dragModeBtn">Enter fold sandbox</button>
-          <button id="dragResetBtn" style="display:none">Reset positions</button>
-          <button id="copyPosBtn" style="display:none">Copy positions</button>
-        </div>
-        <div id="hingePanel" class="controls" style="display:none"></div>
-        <div id="freePointsPanel" class="controls" style="display:none"></div>
-        <div id="anglePanel" class="controls" style="display:none"></div>
-        <pre id="dragReadout" class="debug-note" style="display:none; white-space:pre-wrap;"></pre>
       </div>
     </div>
   </main>
@@ -311,48 +299,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     return out;
   }
 
-  // Signed rotation angle (about `axisDir`, through the pivot both vectors
-  // are measured from) that carries `fromV` onto `toV` — inverts the same
-  // Rodrigues rotation rotateAroundAxisAtOrigin uses, so passing this back
-  // into that function reproduces `toV` exactly.
-  function angleToReach(fromV, toV, axisDir){
-    const axis = vnorm(axisDir);
-    const u = vsub(fromV, vscale(axis, vdot(fromV, axis)));
-    const r = vlen(u);
-    const uUnit = vscale(u, 1/r);
-    const wUnit = vcross(axis, uUnit);
-    const targetPerp = vsub(toV, vscale(axis, vdot(toV, axis)));
-    const cosT = vdot(targetPerp, uUnit) / r;
-    const sinT = vdot(targetPerp, wUnit) / r;
-    return Math.atan2(sinT, cosT);
-  }
-
-  // A corner-flap precrease (`step.creaseFold`) folds the corner itself up
-  // past center while its two REAL paper neighbors (e.g. corner C's E and
-  // S) stay exactly where they are — nothing else on the sheet is touched.
-  // With Ctr and one neighbor (`axisAnchor`) both fixed, rotating the
-  // corner about the axis through them automatically preserves its
-  // distances to both (rigid by construction, any angle). The other
-  // neighbor (`targetAnchor`) also stays fixed, so the corner's distance
-  // to IT only matches its real rest length at two angles: 0 (rest) and
-  // one other — found here via trilateration — which is the actual fold.
-  function creaseFoldParams(step){
-    if(step._creaseFold) return step._creaseFold;
-    const ref = step.ref;
-    const { axisAnchor, targetAnchor } = step.creaseFold;
-    const drive = step.drive;
-    const axisDir = vsub(ref[axisAnchor], ref.Ctr);
-    const dCtr = dist(ref.Ctr, ref[drive]);
-    const dAxisAnchor = dist(ref[axisAnchor], ref[drive]);
-    const dTarget = dist(ref[targetAnchor], ref[drive]);
-    const hint = rotateAroundAxisAt(ref[drive], ref.Ctr, axisDir, Math.PI);
-    const target = trilaterate(ref.Ctr, dCtr, ref[axisAnchor], dAxisAnchor, ref[targetAnchor], dTarget, hint);
-    const angle = angleToReach(vsub(ref[drive], ref.Ctr), vsub(target, ref.Ctr), axisDir);
-    const out = { axisDir, angle };
-    step._creaseFold = out;
-    return out;
-  }
-
   // Computes this step's point positions at completion-fraction p, given
   // the CURRENT persistent particle state (so free points warm-start from
   // wherever they last settled, not from scratch every frame).
@@ -417,15 +363,8 @@ button.primary:hover:not(:disabled){ background:#255e66; }
       return;
     }
     const ref = step.ref || FLAT;
-    let axisDir, angleRad;
-    if(step.creaseFold){
-      const { axisDir: a, angle } = creaseFoldParams(step);
-      axisDir = a;
-      angleRad = p*angle;
-    } else {
-      axisDir = axisForStep(step);
-      angleRad = p*Math.PI;
-    }
+    const angleRad = p*Math.PI;
+    const axisDir = axisForStep(step);
     particles.Ctr = {...ref.Ctr};
     OUTER.forEach(n=>{ if(!step.moving.includes(n)) particles[n] = {...ref[n]}; });
     particles[step.drive] = rotateAroundAxisAt(ref[step.drive], ref.Ctr, axisDir, angleRad);
@@ -460,13 +399,13 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     { type:'flip', from:FLIPPED_FLAT, label:'Flip back', instruction:'Turn the paper back over, the same way as before — it needs to be back in its starting orientation for the collapse.' },
     { type:'collapse', label:'Collapse base', instruction:'Now the 4 creases collapse the other way from the waterbomb base — the 4 edge midpoints meet at one point above center, while the 4 corners spread apart as the rim. This time, only the 4 edge-midpoints are told where to go; Ctr and the 4 corners are found by the solver.' },
     { type:'press', needsRef:true, label:'Press flat', instruction:'Push the top-right corner down onto the bottom-right corner, and the top-left corner down onto the bottom-left corner — the whole model presses flat. Nobody is told where to go except that those 2 pairs must meet; every point\'s actual position, including the corners doing the meeting, is found by the solver.' },
-    { type:'fold', creaseFold:{axisAnchor:'W', targetAnchor:'N'}, moving:['A'], drive:'A', needsRef:true, label:'Precrease flap A', instruction:'Fold corner A up past center — a plain crease, unfolded right after. N and W (A\'s real paper neighbors) stay exactly where they are; nothing else on the sheet moves.' },
+    { type:'fold', crease:['Ctr','N'], moving:['A'], drive:'A', needsRef:true, label:'Precrease flap A', instruction:'Fold corner A along the existing center crease, edge to edge with its diagonal partner — a plain crease, unfolded right after. N/E/S/W are already coincident at the shared corner, so this is a rigid 180° fold of A alone; nothing else on the sheet moves.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', creaseFold:{axisAnchor:'N', targetAnchor:'E'}, moving:['B'], drive:'B', needsRef:true, label:'Precrease flap B', instruction:'Same crease, corner B\'s flap this time.' },
+    { type:'fold', crease:['Ctr','N'], moving:['B'], drive:'B', needsRef:true, label:'Precrease flap B', instruction:'Same crease, corner B\'s flap this time.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', creaseFold:{axisAnchor:'E', targetAnchor:'S'}, moving:['C'], drive:'C', needsRef:true, label:'Precrease flap C', instruction:'Same crease, corner C\'s flap this time.' },
+    { type:'fold', crease:['Ctr','N'], moving:['C'], drive:'C', needsRef:true, label:'Precrease flap C', instruction:'Same crease, corner C\'s flap this time.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold.' },
-    { type:'fold', creaseFold:{axisAnchor:'S', targetAnchor:'W'}, moving:['D'], drive:'D', needsRef:true, label:'Precrease flap D', instruction:'Same crease, corner D\'s flap — the last of the 4.' },
+    { type:'fold', crease:['Ctr','N'], moving:['D'], drive:'D', needsRef:true, label:'Precrease flap D', instruction:'Same crease, corner D\'s flap — the last of the 4.' },
     { type:'unfold', label:'Unfold', instruction:'Unfold. All 4 flaps are precreased now.' },
   ];
 
@@ -520,54 +459,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const lines = new THREE.LineSegments(lineGeo, lineMat);
   group.add(lines);
 
-  // ---- Drag-fold sandbox: a hand-draggable marker per named point, so a
-  // fold can be discovered by dragging instead of writing a rotation
-  // formula for it. Hidden (and non-interactive) outside drag mode.
-  const markerGroup = new THREE.Group();
-  markerGroup.visible = false;
-  group.add(markerGroup);
-  const markers = {};
-  ALL.forEach(name=>{
-    const markerMat = new THREE.MeshBasicMaterial({ color: name==='Ctr' ? 0x5B6169 : 0x2B6E77, depthTest:false });
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(2.4, 16, 16), markerMat);
-    mesh.renderOrder = 999;
-    mesh.userData.name = name;
-    markerGroup.add(mesh);
-    markers[name] = mesh;
-  });
-  function updateMarkers(){
-    ALL.forEach(name=>{
-      const p = particles[name] || FLAT[name];
-      markers[name].position.set(p.x, p.y, p.z);
-    });
-  }
-
-  // Text labels for the sandbox markers — plain positioned DOM elements
-  // (not sprites) so they stay crisp and legible at any zoom, kept in sync
-  // with the markers' screen position every frame while drag mode is on.
-  const labelEls = {};
-  ALL.forEach(name=>{
-    const elLabel = document.createElement('div');
-    elLabel.textContent = name;
-    elLabel.style.cssText = 'position:absolute; transform:translate(-50%,-160%); background:#20242A; color:#fff; font:700 11px "IBM Plex Mono",monospace; padding:1px 5px; border-radius:4px; pointer-events:none; z-index:20; display:none; white-space:nowrap;';
-    stageEl.appendChild(elLabel);
-    labelEls[name] = elLabel;
-  });
-  function updateLabels(){
-    const rect = renderer.domElement.getBoundingClientRect();
-    const stageRect = stageEl.getBoundingClientRect();
-    ALL.forEach(name=>{
-      markers[name].getWorldPosition(_tmpV3);
-      const proj = _tmpV3.clone().project(camera);
-      const x = (proj.x*0.5+0.5)*rect.width + (rect.left - stageRect.left);
-      const y = (1-(proj.y*0.5+0.5))*rect.height + (rect.top - stageRect.top);
-      labelEls[name].style.left = x+'px';
-      labelEls[name].style.top = y+'px';
-    });
-  }
-  function setLabelsVisible(v){
-    ALL.forEach(name=> labelEls[name].style.display = v ? '' : 'none');
-  }
 
   // `lift` is display-only: a folded flap can land exactly coplanar with
   // the static half underneath it (the physics is correct — the paper
@@ -583,10 +474,10 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   // axis runs through; once that fold has happened at least once (folded,
   // even if since unfolded — a crease doesn't un-happen), the Ctr–point
   // spoke to each of them is drawn from then on. Steps without a plain
-  // `crease` (bisectAxis folds, collapse, press, flip) don't add to this —
-  // they reuse creases already made, rather than scoring new ones with a
-  // simple 2-point line. Ring/boundary edges are the sheet's own physical
-  // edge, not a crease, so those always draw.
+  // `crease` (collapse, press, flip) don't add to this — they reuse
+  // creases already made, rather than scoring new ones with a simple
+  // 2-point line. Ring/boundary edges are the sheet's own physical edge,
+  // not a crease, so those always draw.
   function madeCreasePoints(uptoIndex, activeStep){
     const set = new Set();
     for(let i=0;i<uptoIndex;i++){
@@ -673,36 +564,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const dragHintEl = document.getElementById('dragHint');
   function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
 
-  // ---- Fold sandbox state ----
-  // A real fold is a single RIGID rotation of one whole connected piece of
-  // paper about one crease line — not a point dragged freely and everything
-  // else patched up around it. So this picks the crease (2 points the axis
-  // runs through) and which points ride along with it, then turns an angle
-  // slider straight into `rotateAroundAxisAt` on that whole set at once —
-  // the same primitive every scripted fold step already uses. Nothing in
-  // the moving set can ever stretch relative to anything else IN it; only
-  // its real edges to points left OUT of the set can go wrong, and those
-  // show up immediately in the drift readout.
-  let sandboxOn = false, hingeA = 'Ctr', hingeB = 'N', movingSet = new Set(), foldRef = null;
-  const _tmpV3 = new THREE.Vector3();
-  function captureFoldRef(){
-    foldRef = {};
-    ALL.forEach(n => foldRef[n] = {...particles[n]});
-  }
-  function applyManualFold(angleDeg){
-    if(!foldRef) return;
-    const axisDir = vsub(foldRef[hingeB], foldRef[hingeA]);
-    const angleRad = angleDeg * Math.PI/180;
-    ALL.forEach(n=>{
-      particles[n] = movingSet.has(n)
-        ? rotateAroundAxisAt(foldRef[n], foldRef[hingeA], axisDir, angleRad)
-        : {...foldRef[n]};
-    });
-    applyFrame(particles);
-    updateMarkers();
-    updateDragReadout();
-  }
-
   stageEl.addEventListener('pointerdown', (e)=>{
     pointerActive = true; dragging = false;
     downX = lastX = e.clientX; downY = lastY = e.clientY;
@@ -742,7 +603,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function renderLoop(){
     renderer.render(scene, camera);
-    if(sandboxOn) updateLabels();
     requestAnimationFrame(renderLoop);
   }
   renderLoop();
@@ -788,13 +648,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     stepsNav: document.getElementById('stepsNav'),
     stageCaption: document.getElementById('stageCaption'),
     debugNote: document.getElementById('debugNote'),
-    dragModeBtn: document.getElementById('dragModeBtn'),
-    dragResetBtn: document.getElementById('dragResetBtn'),
-    copyPosBtn: document.getElementById('copyPosBtn'),
-    hingePanel: document.getElementById('hingePanel'),
-    freePointsPanel: document.getElementById('freePointsPanel'),
-    anglePanel: document.getElementById('anglePanel'),
-    dragReadout: document.getElementById('dragReadout'),
   };
 
   function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
@@ -823,7 +676,6 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     ALL.forEach(n => ref[n] = {...fromParticles[n]});
     step.ref = ref;
     delete step._axis;
-    delete step._creaseFold;
   }
 
   function animateStep(step, reverse, onDone){
@@ -947,99 +799,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     playing=false; el.playBtn.textContent='▶ Play all';
   });
 
-  // ---- Fold sandbox controls ----
-  function updateDragReadout(){
-    let maxErr = 0, worst = '';
-    constraints.forEach(([a,b,rest])=>{
-      const err = Math.abs(dist(particles[a],particles[b]) - rest);
-      if(err > maxErr){ maxErr = err; worst = a+'-'+b; }
-    });
-    const lines = ALL.map(n=>{
-      const p = particles[n];
-      return `${n.padEnd(4)} (${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`;
-    });
-    el.dragReadout.textContent = `Max real-edge drift: ${maxErr.toExponential(2)} (worst: ${worst===''?'—':worst})\n` + lines.join('\n');
-  }
-
-  el.hingePanel.innerHTML =
-    `<label style="font-size:.8rem;font-family:'IBM Plex Mono',monospace;">crease from <select id="hingeASel">${ALL.map(n=>`<option value="${n}"${n===hingeA?' selected':''}>${n}</option>`).join('')}</select></label>` +
-    `<label style="font-size:.8rem;font-family:'IBM Plex Mono',monospace;">to <select id="hingeBSel">${ALL.map(n=>`<option value="${n}"${n===hingeB?' selected':''}>${n}</option>`).join('')}</select></label>`;
-  el.freePointsPanel.innerHTML =
-    `<span style="font-size:.78rem;color:var(--ink-muted);width:100%;">Which points fold along with the crease (everything else stays exactly where it is):</span>` +
-    OUTER.map(n=>
-      `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;" title="${n} rotates rigidly with the crease"><input type="checkbox" data-pt="${n}"> ${n} folds</label>`
-    ).join('');
-  el.anglePanel.innerHTML =
-    `<label style="display:flex;align-items:center;gap:.6rem;width:100%;font-size:.8rem;font-family:'IBM Plex Mono',monospace;">fold angle <input type="range" id="foldAngleSlider" min="-180" max="180" value="0" step="1" style="flex:1;"> <span id="foldAngleVal" style="min-width:3.2em;">0°</span></label>`;
-
-  function resetFoldRefAndAngle(){
-    captureFoldRef();
-    document.getElementById('foldAngleSlider').value = 0;
-    document.getElementById('foldAngleVal').textContent = '0°';
-  }
-  el.hingePanel.querySelectorAll('select').forEach(sel=>{
-    sel.addEventListener('change', ()=>{
-      hingeA = document.getElementById('hingeASel').value;
-      hingeB = document.getElementById('hingeBSel').value;
-      resetFoldRefAndAngle();
-      updateDragReadout();
-    });
-  });
-  el.freePointsPanel.querySelectorAll('input').forEach(cb=>{
-    cb.addEventListener('change', ()=>{
-      if(cb.checked) movingSet.add(cb.dataset.pt); else movingSet.delete(cb.dataset.pt);
-      resetFoldRefAndAngle();
-      updateDragReadout();
-    });
-  });
-  el.anglePanel.addEventListener('input', (e)=>{
-    if(e.target.id!=='foldAngleSlider') return;
-    const deg = +e.target.value;
-    document.getElementById('foldAngleVal').textContent = deg+'°';
-    applyManualFold(deg);
-  });
-  el.dragModeBtn.addEventListener('click', ()=>{
-    sandboxOn = !sandboxOn;
-    markerGroup.visible = sandboxOn;
-    setLabelsVisible(sandboxOn);
-    el.dragModeBtn.textContent = sandboxOn ? 'Exit fold sandbox' : 'Enter fold sandbox';
-    el.dragResetBtn.style.display = sandboxOn ? '' : 'none';
-    el.copyPosBtn.style.display = sandboxOn ? '' : 'none';
-    el.hingePanel.style.display = sandboxOn ? '' : 'none';
-    el.freePointsPanel.style.display = sandboxOn ? '' : 'none';
-    el.anglePanel.style.display = sandboxOn ? '' : 'none';
-    el.dragReadout.style.display = sandboxOn ? '' : 'none';
-    setButtons(!sandboxOn);
-    if(sandboxOn){
-      updateMarkers();
-      updateLabels();
-      resetFoldRefAndAngle();
-      updateDragReadout();
-    }
-  });
-  el.dragResetBtn.addEventListener('click', ()=>{
-    settleUpToStep(stepIndex);
-    applyFrame(particles, currentLift());
-    updateMarkers();
-    resetFoldRefAndAngle();
-    updateDragReadout();
-  });
-  el.copyPosBtn.addEventListener('click', async ()=>{
-    const data = {};
-    ALL.forEach(n=>{ const p=particles[n]; data[n] = { x:+p.x.toFixed(4), y:+p.y.toFixed(4), z:+p.z.toFixed(4) }; });
-    const text = JSON.stringify(data, null, 2);
-    try{
-      await navigator.clipboard.writeText(text);
-      el.copyPosBtn.textContent = 'Copied!';
-      setTimeout(()=>{ el.copyPosBtn.textContent = 'Copy positions'; }, 1200);
-    }catch(e){
-      el.dragReadout.textContent = text;
-    }
-  });
-
   window.__particles = particles;
-  window.__camera = camera;
-  window.__markers = markers;
   window.__COLLAPSED_REFERENCE = COLLAPSED_REFERENCE;
   window.__group = group;
   window.__renderNow = ()=>renderer.render(scene, camera);
