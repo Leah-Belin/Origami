@@ -164,14 +164,16 @@ button.primary:hover:not(:disabled){ background:#255e66; }
         <div class="swatches" id="swatches"></div>
         <p class="debug-note" id="debugNote"></p>
 
-        <p class="swatch-label">Drag-fold sandbox</p>
-        <p class="progress-note" style="margin:0 0 .8rem;">Navigate to a step with the buttons above, then drag any dot to explore a fold by hand — the solver keeps every real paper edge exactly rigid live. Everything not dragged stays pinned unless you mark it free below.</p>
+        <p class="swatch-label">Fold sandbox</p>
+        <p class="progress-note" style="margin:0 0 .8rem;">Navigate to a step above, then define a fold directly: pick the 2 points the crease runs through, pick which points fold along with it, then use the slider to fold — a true rigid rotation, so nothing inside the folding set can ever stretch relative to anything else in it. Any real edge from the folding set to a point you left out shows up as drift below.</p>
         <div class="controls">
-          <button id="dragModeBtn">Enter drag mode</button>
+          <button id="dragModeBtn">Enter fold sandbox</button>
           <button id="dragResetBtn" style="display:none">Reset positions</button>
           <button id="copyPosBtn" style="display:none">Copy positions</button>
         </div>
+        <div id="hingePanel" class="controls" style="display:none"></div>
         <div id="freePointsPanel" class="controls" style="display:none"></div>
+        <div id="anglePanel" class="controls" style="display:none"></div>
         <pre id="dragReadout" class="debug-note" style="display:none; white-space:pre-wrap;"></pre>
       </div>
     </div>
@@ -671,80 +673,42 @@ button.primary:hover:not(:disabled){ background:#255e66; }
   const dragHintEl = document.getElementById('dragHint');
   function hideDragHint(){ dragHintEl.classList.add('is-hidden'); }
 
-  // ---- Drag-fold sandbox interaction ----
-  let dragModeOn = false, draggingName = null, freeSet = new Set();
-  let lastDragX = 0, lastDragY = 0;
+  // ---- Fold sandbox state ----
+  // A real fold is a single RIGID rotation of one whole connected piece of
+  // paper about one crease line — not a point dragged freely and everything
+  // else patched up around it. So this picks the crease (2 points the axis
+  // runs through) and which points ride along with it, then turns an angle
+  // slider straight into `rotateAroundAxisAt` on that whole set at once —
+  // the same primitive every scripted fold step already uses. Nothing in
+  // the moving set can ever stretch relative to anything else IN it; only
+  // its real edges to points left OUT of the set can go wrong, and those
+  // show up immediately in the drift readout.
+  let sandboxOn = false, hingeA = 'Ctr', hingeB = 'N', movingSet = new Set(), foldRef = null;
   const _tmpV3 = new THREE.Vector3();
-  function pickMarker(e){
-    // Screen-space nearest-marker pick, not a 3D raycast: at some viewing
-    // angles two markers project very close together (or one is briefly
-    // behind another), and a depth-based ray hit would silently grab
-    // whichever is a hair closer to the camera — not whichever dot the
-    // user is actually looking at on screen.
-    const rect = renderer.domElement.getBoundingClientRect();
-    let best = null, bestDist = 22; // px
-    ALL.forEach(name=>{
-      if(name==='Ctr') return;
-      markers[name].getWorldPosition(_tmpV3);
-      const proj = _tmpV3.clone().project(camera);
-      const sx = (proj.x*0.5+0.5)*rect.width + rect.left;
-      const sy = (1-(proj.y*0.5+0.5))*rect.height + rect.top;
-      const d = Math.hypot(sx-e.clientX, sy-e.clientY);
-      if(d < bestDist){ bestDist = d; best = name; }
-    });
-    return best;
+  function captureFoldRef(){
+    foldRef = {};
+    ALL.forEach(n => foldRef[n] = {...particles[n]});
   }
-  function dragPoint(e){
-    const dx = e.clientX - lastDragX, dy = e.clientY - lastDragY;
-    lastDragX = e.clientX; lastDragY = e.clientY;
-    if(!dx && !dy) return;
-    // Trackball-style, not a screen-plane intersection: rotate the point
-    // around Ctr, using camera-relative axes, by an angle proportional to
-    // the mouse move. A fixed drag PLANE can only reach a small patch of
-    // the point's actual range of motion (the sphere around Ctr at its
-    // real, fixed distance) before the ray stops crossing it usefully —
-    // this instead covers that whole sphere with ordinary mouse movement,
-    // the same way you'd spin a trackball.
-    const camRight = new THREE.Vector3(), camUp = new THREE.Vector3();
-    camera.matrixWorld.extractBasis(camRight, camUp, new THREE.Vector3());
-    const ctrWorld = new THREE.Vector3(); markers.Ctr.getWorldPosition(ctrWorld);
-    const ptWorld = new THREE.Vector3(); markers[draggingName].getWorldPosition(ptWorld);
-    const rel = ptWorld.sub(ctrWorld);
-    const sens = 0.012;
-    rel.applyAxisAngle(camUp, -dx*sens);
-    rel.applyAxisAngle(camRight, -dy*sens);
-    const newWorld = ctrWorld.add(rel);
-    group.worldToLocal(newWorld);
-    // The dragged point's distance to Ctr is an already-made crease/
-    // diagonal from earlier in the sequence, never re-creased later —
-    // rotating `rel` already preserves it exactly, but re-snap to it
-    // explicitly so repeated small floating-point drift can't accumulate.
-    const wantDist = restLen[draggingName+'|Ctr'];
-    const dir = vnorm(vsub(newWorld, particles.Ctr));
-    particles[draggingName] = vadd(particles.Ctr, vscale(dir, wantDist));
-    const pinned = new Set(ALL.filter(n => !freeSet.has(n)));
-    relax(particles, pinned, 150);
+  function applyManualFold(angleDeg){
+    if(!foldRef) return;
+    const axisDir = vsub(foldRef[hingeB], foldRef[hingeA]);
+    const angleRad = angleDeg * Math.PI/180;
+    ALL.forEach(n=>{
+      particles[n] = movingSet.has(n)
+        ? rotateAroundAxisAt(foldRef[n], foldRef[hingeA], axisDir, angleRad)
+        : {...foldRef[n]};
+    });
     applyFrame(particles);
     updateMarkers();
     updateDragReadout();
   }
 
   stageEl.addEventListener('pointerdown', (e)=>{
-    if(dragModeOn){
-      const hit = pickMarker(e);
-      if(hit && hit!=='Ctr'){
-        draggingName = hit;
-        lastDragX = e.clientX; lastDragY = e.clientY;
-        stageEl.setPointerCapture(e.pointerId);
-        return;
-      }
-    }
     pointerActive = true; dragging = false;
     downX = lastX = e.clientX; downY = lastY = e.clientY;
     stageEl.setPointerCapture(e.pointerId);
   });
   stageEl.addEventListener('pointermove', (e)=>{
-    if(draggingName){ dragPoint(e); return; }
     if(!pointerActive) return;
     if(!dragging){
       const totalDx = e.clientX - downX, totalDy = e.clientY - downY;
@@ -758,7 +722,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     lastX = e.clientX; lastY = e.clientY;
     orbit(dx * 0.008, dy * 0.008);
   });
-  function endDrag(){ pointerActive = false; dragging = false; draggingName = null; stageEl.classList.remove('grabbing'); }
+  function endDrag(){ pointerActive = false; dragging = false; stageEl.classList.remove('grabbing'); }
   stageEl.addEventListener('pointerup', endDrag);
   stageEl.addEventListener('pointercancel', endDrag);
   stageEl.addEventListener('pointerleave', endDrag);
@@ -778,7 +742,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
 
   function renderLoop(){
     renderer.render(scene, camera);
-    if(dragModeOn) updateLabels();
+    if(sandboxOn) updateLabels();
     requestAnimationFrame(renderLoop);
   }
   renderLoop();
@@ -827,7 +791,9 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     dragModeBtn: document.getElementById('dragModeBtn'),
     dragResetBtn: document.getElementById('dragResetBtn'),
     copyPosBtn: document.getElementById('copyPosBtn'),
+    hingePanel: document.getElementById('hingePanel'),
     freePointsPanel: document.getElementById('freePointsPanel'),
+    anglePanel: document.getElementById('anglePanel'),
     dragReadout: document.getElementById('dragReadout'),
   };
 
@@ -981,7 +947,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     playing=false; el.playBtn.textContent='▶ Play all';
   });
 
-  // ---- Drag-fold sandbox controls ----
+  // ---- Fold sandbox controls ----
   function updateDragReadout(){
     let maxErr = 0, worst = '';
     constraints.forEach(([a,b,rest])=>{
@@ -994,30 +960,60 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     });
     el.dragReadout.textContent = `Max real-edge drift: ${maxErr.toExponential(2)} (worst: ${worst===''?'—':worst})\n` + lines.join('\n');
   }
+
+  el.hingePanel.innerHTML =
+    `<label style="font-size:.8rem;font-family:'IBM Plex Mono',monospace;">crease from <select id="hingeASel">${ALL.map(n=>`<option value="${n}"${n===hingeA?' selected':''}>${n}</option>`).join('')}</select></label>` +
+    `<label style="font-size:.8rem;font-family:'IBM Plex Mono',monospace;">to <select id="hingeBSel">${ALL.map(n=>`<option value="${n}"${n===hingeB?' selected':''}>${n}</option>`).join('')}</select></label>`;
   el.freePointsPanel.innerHTML =
-    `<span style="font-size:.78rem;color:var(--ink-muted);width:100%;">By default every other point stays pinned exactly in place while you drag. Check a point here to let the solver move it too, so it can settle wherever keeps its real paper edges rigid:</span>` +
+    `<span style="font-size:.78rem;color:var(--ink-muted);width:100%;">Which points fold along with the crease (everything else stays exactly where it is):</span>` +
     OUTER.map(n=>
-      `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;" title="Let ${n} move too while dragging, instead of staying pinned"><input type="checkbox" data-pt="${n}"> let ${n} move</label>`
+      `<label style="display:inline-flex;align-items:center;gap:.3rem;font-size:.8rem;font-family:'IBM Plex Mono',monospace;" title="${n} rotates rigidly with the crease"><input type="checkbox" data-pt="${n}"> ${n} folds</label>`
     ).join('');
-  el.freePointsPanel.querySelectorAll('input').forEach(cb=>{
-    cb.addEventListener('change', ()=>{
-      if(cb.checked) freeSet.add(cb.dataset.pt); else freeSet.delete(cb.dataset.pt);
+  el.anglePanel.innerHTML =
+    `<label style="display:flex;align-items:center;gap:.6rem;width:100%;font-size:.8rem;font-family:'IBM Plex Mono',monospace;">fold angle <input type="range" id="foldAngleSlider" min="-180" max="180" value="0" step="1" style="flex:1;"> <span id="foldAngleVal" style="min-width:3.2em;">0°</span></label>`;
+
+  function resetFoldRefAndAngle(){
+    captureFoldRef();
+    document.getElementById('foldAngleSlider').value = 0;
+    document.getElementById('foldAngleVal').textContent = '0°';
+  }
+  el.hingePanel.querySelectorAll('select').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      hingeA = document.getElementById('hingeASel').value;
+      hingeB = document.getElementById('hingeBSel').value;
+      resetFoldRefAndAngle();
+      updateDragReadout();
     });
   });
+  el.freePointsPanel.querySelectorAll('input').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) movingSet.add(cb.dataset.pt); else movingSet.delete(cb.dataset.pt);
+      resetFoldRefAndAngle();
+      updateDragReadout();
+    });
+  });
+  el.anglePanel.addEventListener('input', (e)=>{
+    if(e.target.id!=='foldAngleSlider') return;
+    const deg = +e.target.value;
+    document.getElementById('foldAngleVal').textContent = deg+'°';
+    applyManualFold(deg);
+  });
   el.dragModeBtn.addEventListener('click', ()=>{
-    dragModeOn = !dragModeOn;
-    markerGroup.visible = dragModeOn;
-    setLabelsVisible(dragModeOn);
-    el.dragModeBtn.textContent = dragModeOn ? 'Exit drag mode' : 'Enter drag mode';
-    el.dragResetBtn.style.display = dragModeOn ? '' : 'none';
-    el.copyPosBtn.style.display = dragModeOn ? '' : 'none';
-    el.freePointsPanel.style.display = dragModeOn ? '' : 'none';
-    el.dragReadout.style.display = dragModeOn ? '' : 'none';
-    setButtons(!dragModeOn);
-    if(dragModeOn){
-      userRotating = true; hideDragHint();
+    sandboxOn = !sandboxOn;
+    markerGroup.visible = sandboxOn;
+    setLabelsVisible(sandboxOn);
+    el.dragModeBtn.textContent = sandboxOn ? 'Exit fold sandbox' : 'Enter fold sandbox';
+    el.dragResetBtn.style.display = sandboxOn ? '' : 'none';
+    el.copyPosBtn.style.display = sandboxOn ? '' : 'none';
+    el.hingePanel.style.display = sandboxOn ? '' : 'none';
+    el.freePointsPanel.style.display = sandboxOn ? '' : 'none';
+    el.anglePanel.style.display = sandboxOn ? '' : 'none';
+    el.dragReadout.style.display = sandboxOn ? '' : 'none';
+    setButtons(!sandboxOn);
+    if(sandboxOn){
       updateMarkers();
       updateLabels();
+      resetFoldRefAndAngle();
       updateDragReadout();
     }
   });
@@ -1025,6 +1021,7 @@ button.primary:hover:not(:disabled){ background:#255e66; }
     settleUpToStep(stepIndex);
     applyFrame(particles, currentLift());
     updateMarkers();
+    resetFoldRefAndAngle();
     updateDragReadout();
   });
   el.copyPosBtn.addEventListener('click', async ()=>{
